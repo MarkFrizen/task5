@@ -9,7 +9,7 @@ from langgraph.graph import StateGraph, END
 # Загрузка переменных окружения из файла .env
 load_dotenv()
 
-# 1. Описание функций в формате JSON Schema для передачи в LLM
+# Описание функций в формате JSON Schema для передачи в LLM
 flight_functions = [
     {
         "type": "function",
@@ -87,8 +87,7 @@ flight_functions = [
     }
 ]
 
-# 2. Мок-данные и функции-заглушки для имитации внешнего API
-# Внутренняя база данных рейсов с доступными местами
+# Мок-данные и функции-заглушки для имитации внешнего API
 flights_db = {
     "FL123": {
         "origin": "Moscow",
@@ -158,8 +157,7 @@ available_functions = {
     "book_flight": book_flight,
 }
 
-# 3. Инициализация LLM через локальный сервер LM Studio
-# Для LM Studio ключ не требуется, но LangChain ожидает его наличие
+# Инициализация LLM через локальный сервер LM Studio
 os.environ.setdefault("OPENAI_API_KEY", "dummy")
 
 llm = ChatOpenAI(
@@ -172,7 +170,7 @@ llm = ChatOpenAI(
 # Привязываем инструменты к LLM для возможности вызова функций
 llm_with_tools = llm.bind_tools(flight_functions)
 
-# 4. Подключение трейсинга Arize Phoenix - опционально
+# Подключение трейсинга Arize Phoenix
 try:
     from phoenix.otel import register
     from openinference.instrumentation.langchain import LangChainInstrumentor
@@ -188,7 +186,7 @@ except ImportError:
 except Exception as e:
     print(f"Ошибка подключения Phoenix: {e}")
 
-# 5. Построение графа LangGraph для агентского цикла
+# Построение графа LangGraph для агентского цикла
 class AgentState(TypedDict):
     messages: List[Any]
 
@@ -231,7 +229,7 @@ def should_continue(state: AgentState):
     else:
         return END
 
-# Создаём граф состояний
+# Создание графа состояний
 workflow = StateGraph(AgentState)
 workflow.add_node("agent", agent_node)
 workflow.add_node("tools", tools_node)
@@ -242,10 +240,10 @@ workflow.add_conditional_edges("agent", should_continue, {
 })
 workflow.add_edge("tools", "agent")   # После выполнения инструментов возвращаемся к агенту
 
-# Компилируем граф в исполняемое приложение
+# Компиляция графа в исполняемое приложение
 app = workflow.compile()
 
-# 6. Главная функция запуска агента по текстовому запросу
+# Главная функция запуска агента по текстовому запросу
 def run_agent(query: str) -> str:
     """
     Запускает агента с пользовательским запросом и возвращает финальный ответ.
@@ -258,7 +256,7 @@ def run_agent(query: str) -> str:
             return msg.content
     return "Не удалось получить ответ от агента."
 
-# 7. Тестовый запуск при прямом выполнении файла
+# Тестовый запуск при прямом выполнении файла
 if __name__ == "__main__":
     test_query = (
         "Забронируй мне билет эконом-классом из Москвы в Дубай на 10 августа 2026 "

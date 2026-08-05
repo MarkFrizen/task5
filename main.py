@@ -4,7 +4,7 @@ from agent import run_agent
 class BookingRequest(BaseModel):
     query: str
 app = FastAPI(title="Flight Booking Agent API", version="1.0.0")
-# Блокнот 2. Схема запроса и маршрут бронирования
+# Схема запроса и маршрут бронирования
 @app.post("/book", summary="Забронировать авиабилет через агента")
 async def book_flight(request: BookingRequest):
     try:
@@ -12,7 +12,7 @@ async def book_flight(request: BookingRequest):
         return {"response": answer}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-# Блокнот 3. Маршрут проверки здоровья API
+# Маршрут проверки здоровья API
 @app.get("/health", summary="Проверка работоспособности")
 async def health():
     return {"status": "ok"}
