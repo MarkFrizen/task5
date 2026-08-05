@@ -1,0 +1,21 @@
+[project]
+name = "flight-booking-agent"
+version = "0.1.0"
+description = "AI agent for flight booking with tool calling"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain>=0.3.0",
+    "langgraph>=0.2.0",
+    "openai>=1.0.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-dotenv>=1.0.0",
+]
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.6.0",
+]
+[tool.ruff]
+line-length = 120
+target-version = "py311"
