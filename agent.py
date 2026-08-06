@@ -84,7 +84,7 @@ flight_functions = [
     }
 ]
 
- # Базовые данные рейсов в формате заглушки
+# Базовые данные рейсов в формате заглушки
 flights_db = {
     "FL123": {
         "origin": "Moscow",
@@ -147,14 +147,14 @@ def book_flight(flight_id: str, passenger_name: str, seat_class: str) -> Dict:
         "message": f"Бронирование {booking_id} успешно создано!"
     }
 
- # Словарь связывания имён функций с реальными функциями
+# Словарь связывания имён функций с реальными функциями
 available_functions = {
     "search_flights": search_flights,
     "check_availability": check_availability,
     "book_flight": book_flight,
 }
 
- # Инициализация LLM через локальный сервер LM Studio
+# Инициализация LLM через локальный сервер LM Studio
 os.environ.setdefault("OPENAI_API_KEY", "dummy")
 
 llm = ChatOpenAI(
@@ -164,10 +164,10 @@ llm = ChatOpenAI(
     temperature=0,
 )
 
- # Привязка инструментов к LLM
+# Привязка инструментов к LLM
 llm_with_tools = llm.bind_tools(flight_functions)
 
- # Подключение трейсинга Arize Phoenix
+# Подключение трейсинга Arize Phoenix
 try:
     from phoenix.otel import register
     from langchain_instrumentation import LangChainInstrumentor
@@ -183,7 +183,7 @@ except ImportError:
 except Exception as e:
     print(f"Ошибка подключения Phoenix: {e}")
 
- # Определение состояния агента
+# Определение состояния агента
 class AgentState(TypedDict):
     messages: List[Any]
 
@@ -226,7 +226,7 @@ def should_continue(state: AgentState):
     else:
         return END
 
- # Создание графа LangGraph
+# Создание графа LangGraph
 workflow = StateGraph(AgentState)
 workflow.add_node("agent", agent_node)
 workflow.add_node("tools", tools_node)
@@ -237,7 +237,7 @@ workflow.add_conditional_edges("agent", should_continue, {
 })
 workflow.add_edge("tools", "agent")   # После выполнения инструментов возвращаемся к агенту
 
- # Компиляция графа в исполняемое приложение
+# Компиляция графа в исполняемое приложение
 app = workflow.compile()
 
 # Главная функция запуска агента по текстовому запросу
@@ -260,7 +260,5 @@ def run_test_agent():
     print("Запрос:", test_query)
     answer = run_agent(test_query)
     print("Ответ агента:", answer)
-
-
 if __name__ == "__main__":
     run_test_agent()
