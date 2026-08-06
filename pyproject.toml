@@ -13,6 +13,7 @@ dependencies = [
     "langchain-openai>=1.4.1",
     "tiktoken>=0.13.0",
     "arize-phoenix>=19.18.0",
+    "langchain-instrumentation>=0.1.0",
 ]
 [dependency-groups]
 dev = [

@@ -173,7 +173,7 @@ llm_with_tools = llm.bind_tools(flight_functions)
 # Подключение трейсинга Arize Phoenix
 try:
     from phoenix.otel import register
-    from openinference.instrumentation.langchain import LangChainInstrumentor
+    from langchain_instrumentation import LangChainInstrumentor
 
     tracer_provider = register(
         project_name="flight-booking-agent",
