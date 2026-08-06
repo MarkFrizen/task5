@@ -256,8 +256,8 @@ def run_agent(query: str) -> str:
             return msg.content
     return "Не удалось получить ответ от агента."
 
-# Тестовый запуск при прямом выполнении файла
-if __name__ == "__main__":
+def run_test_agent():
+    """Запуск тестового запроса агента (вызывается через uv run test-agent)."""
     test_query = (
         "Забронируй мне билет эконом-классом из Москвы в Дубай на 10 августа 2026 "
         "для пассажира Иванова Ивана Ивановича."
@@ -265,3 +265,7 @@ if __name__ == "__main__":
     print("Запрос:", test_query)
     answer = run_agent(test_query)
     print("Ответ агента:", answer)
+
+
+if __name__ == "__main__":
+    run_test_agent()
