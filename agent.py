@@ -162,10 +162,11 @@ llm = ChatOpenAI(
     api_key="dummy",                       # Фиктивный ключ
     model="qwen/qwen3.5-9b",               # Имя модели, загруженной в LM Studio
     temperature=0,
+    model_kwargs={"parallel_tool_calls": False},
 )
 
 # Привязка инструментов к LLM
-llm_with_tools = llm.bind_tools(flight_functions)
+llm_with_tools = llm.bind_tools(flight_functions, tool_choice="auto")
 
 # Подключение трейсинга Arize Phoenix
 try:
