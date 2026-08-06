@@ -3,8 +3,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from agent import run_agent
 # Модель запроса для бронирования
-class BookingRequest(BaseModel):
-    query: str
+class BookingRequest(BaseModel): query: str
 
 # Создание приложения FastAPI
 app = FastAPI(title="Flight Booking Agent API", version="1.0.0")
