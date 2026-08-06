@@ -7,8 +7,8 @@ cd "$SCRIPT_DIR"
 case "${1:-help}" in
     server)
         echo "=== Запуск API сервера (http://localhost:8000) ==="
-        echo "  POST /book — бронирование билета"
-        echo "  GET  /health — проверка работоспособности"
+        echo "  POST /book - бронирование билета"
+        echo "  GET  /health - проверка работоспособности"
         echo ""
         uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
         ;;
@@ -21,14 +21,14 @@ case "${1:-help}" in
         uv run python agent.py -- "$@"
         ;;
     *)
-        echo "Flight Booking Agent — управление"
+        echo "Flight Booking Agent - управление"
         echo ""
         echo "Использование: ./run.sh <команда>"
         echo ""
         echo "Команды:"
-        echo "  server   — запустить API сервер (port 8000)"
-        echo "  test     — запустить тестовый запрос агента"
-        echo "  agent    — запустить интерактивного агента"
+        echo "  server   - запустить API сервер (port 8000)"
+        echo "  test     - запустить тестовый запрос агента"
+        echo "  agent    - запустить интерактивного агента"
         echo ""
         echo "Примеры:"
         echo "  ./run.sh server"
