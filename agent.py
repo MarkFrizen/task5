@@ -1,6 +1,9 @@
 import os
 import random
 import re
+import subprocess
+import socket
+import threading
 from typing import List, Dict, Any, TypedDict
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
@@ -171,51 +174,51 @@ llm = ChatOpenAI(
 llm_with_tools = llm.bind_tools(flight_functions)
 
 # 4. Подключение трейсинга Arize Phoenix для мониторинга вызовов (опционально)
-try:
-    from phoenix.otel import register
-    from openinference.instrumentation.langchain import LangChainInstrumentor
-    import subprocess
-    import socket
-    import threading
+def _is_port_in_use(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('localhost', port)) == 0
 
-    def is_port_in_use(port: int) -> bool:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            return s.connect_ex(('localhost', port)) == 0
-
-    def start_phoenix_server():
-        """Запускает сервер Phoenix, если он ещё не работает."""
+def _start_phoenix_server():
+    """Запускает сервер Phoenix, если он ещё не работает."""
+    phoenix_bin = None
+    candidate = os.path.join(os.path.dirname(__file__), '.venv', 'bin', 'phoenix')
+    if os.path.isfile(candidate):
+        phoenix_bin = candidate
+    if phoenix_bin is None:
         import sys
-        phoenix_bin = None
-        candidate = os.path.join(os.path.dirname(__file__), '.venv', 'bin', 'phoenix')
-        if os.path.isfile(candidate):
-            phoenix_bin = candidate
-        if phoenix_bin is None:
-            phoenix_bin = os.path.join(os.path.dirname(sys.executable), 'phoenix')
-        if not os.path.isfile(phoenix_bin):
-            phoenix_bin = 'phoenix'
-        subprocess.Popen(
-            [phoenix_bin, 'serve', '--port', '6006'],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        for _ in range(30):
-            if is_port_in_use(6006):
-                break
-            threading.Event().wait(0.5)
-
-    if not is_port_in_use(6006):
-        start_phoenix_server()
-
-    tracer_provider = register(
-        project_name="flight-booking-agent",
-        endpoint="http://localhost:6006/v1/traces",
+        phoenix_bin = os.path.join(os.path.dirname(sys.executable), 'phoenix')
+    if not os.path.isfile(phoenix_bin):
+        phoenix_bin = 'phoenix'
+    subprocess.Popen(
+        [phoenix_bin, 'serve', '--port', '6006'],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
-    LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
-    print("Трейсинг Phoenix подключён, доступен по адресу http://localhost:6006")
-except ImportError:
-    print("Phoenix не установлен, трейсинг отключён.")
-except Exception as e:
-    print(f"Ошибка подключения Phoenix: {e}")
+    for _ in range(30):
+        if _is_port_in_use(6006):
+            break
+        threading.Event().wait(0.5)
+
+def init_phoenix():
+    """Инициализирует Phoenix: запускает серве�� (если нужно) и подключает трейсинг.
+    Вызывается из main.py перед запуском приложения."""
+    try:
+        from phoenix.otel import register
+        from openinference.instrumentation.langchain import LangChainInstrumentor
+
+        if not _is_port_in_use(6006):
+            _start_phoenix_server()
+
+        tracer_provider = register(
+            project_name="flight-booking-agent",
+            endpoint="http://localhost:6006/v1/traces",
+        )
+        LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
+        print("Трейсинг Phoenix подключён, доступен по адресу http://localhost:6006")
+    except ImportError:
+        print("Phoenix не установлен, трейсинг отключён.")
+    except Exception as e:
+        print(f"Ошибка подключения Phoenix: {e}")
 
 # 5. Умная заглушка для тестирования без подключённого LLM (парсинг запроса regex и эмуляция вызовов инструментов)
 def fallback_stub(messages: List[Any]) -> AIMessage:
@@ -410,5 +413,7 @@ def run_test_agent():
     print("Запрос:", test_query)
     answer = run_agent(test_query)
     print("Ответ агента:", answer)
+
 if __name__ == "__main__":
+    init_phoenix()
     run_test_agent()

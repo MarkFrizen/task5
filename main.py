@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from agent import run_agent
+from agent import run_agent, init_phoenix
 
 # FastAPI-приложение с API для бронирования авиабилетов через AI-агента
 app = FastAPI(
@@ -22,3 +22,8 @@ async def book_flight(request: BookingRequest):
 @app.get("/health", summary="Проверка работоспособности сервиса")
 async def health():
     return {"status": "ok", "model": "qwen/qwen3.5-9b (локально через LM Studio)"}
+
+if __name__ == "__main__":
+    init_phoenix()
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
