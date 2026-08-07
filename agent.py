@@ -8,7 +8,7 @@ import traceback
 from typing import List, Dict, Any, TypedDict
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 
 # Загрузка переменных окружения из файла .env
@@ -332,6 +332,10 @@ class AgentState(TypedDict):
 def agent_node(state: AgentState):
     """Узел агента - вызов LLM с текущими сообщениями"""
     messages = state["messages"]
+    # Добавляем системный промпт, если его нет
+    has_system = any(isinstance(m, SystemMessage) for m in messages)
+    if not has_system:
+        messages = [SystemMessage(content="You are a helpful assistant that helps users book flights.")] + messages
     try:
         response = llm_with_tools.invoke(messages)
     except Exception as e:
