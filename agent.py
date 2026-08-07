@@ -2,7 +2,7 @@ import os
 import random
 import re
 from typing import List, Dict, Any, TypedDict
-from langchain_openai import ChatOpenAI
+from langchain_community.chat_models import ChatOllama
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langgraph.graph import StateGraph, END
 
@@ -152,19 +152,13 @@ available_functions = {
     "book_flight": book_flight,
 }
 
-# 3. Инициализация LLM (OpenRouter или локальный сервер)
-openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
-if not openrouter_api_key:
-    print("⚠️  OPENROUTER_API_KEY не установлен. Используется заглушка для тестирования.")
-    openrouter_api_key = "dummy"
-    os.environ.setdefault("OPENAI_API_KEY", "dummy")
-llm = ChatOpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=openrouter_api_key,
-    model="qwen/qwen-2.5-7b-instruct:free",
+# 3. Инициализация LLM (локальный Ollama)
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:latest")
+print(f"Инициализация локальной LLM: {OLLAMA_MODEL} (Ollama)")
+llm = ChatOllama(
+    model=OLLAMA_MODEL,
     temperature=0,
-    model_kwargs={"parallel_tool_calls": False},
-    timeout=120,
+    num_ctx=4096,
 )
 llm_with_tools = llm.bind_tools(flight_functions, tool_choice="auto")
 
