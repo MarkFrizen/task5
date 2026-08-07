@@ -1,29 +1,30 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from agent import run_agent, init_phoenix
-
-# FastAPI-приложение с API для бронирования авиабилетов через AI-агента
+from config import config
 app = FastAPI(
-    title="Flight Booking Agent API",
-    description="API для бронирования авиабилетов с помощью AI-агента",
+    title="Flight Booking + RAG Agent API",
+    description="API для бронирования авиабилетов и вопросов к RAG-агенту",
     version="1.0.0"
 )
-
-# Модель запроса с текстом пользовательского запроса на естественном языке
-class BookingRequest(BaseModel):
+class QueryRequest(BaseModel):
     query: str
-@app.post("/book", summary="Забронировать авиабилет через агента")
-async def book_flight(request: BookingRequest):
+@app.post("/ask", summary="Задать вопрос агенту (бронирование или RAG)")
+async def ask(request: QueryRequest):
     try:
         answer = run_agent(request.query)
         return {"response": answer}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-@app.get("/health", summary="Проверка работоспособности сервиса")
+@app.get("/health", summary="Проверка работоспособности")
 async def health():
-    return {"status": "ok", "model": "qwen/qwen3.5-9b (локально через LM Studio)"}
-
+    return {
+        "status": "ok",
+        "model": config.llm_model,
+        "rag_index_exists": bool(config.index_path and os.path.exists(config.index_path))
+    }
 if __name__ == "__main__":
-    init_phoenix()
+    if config.phoenix_enabled:
+        init_phoenix()
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=config.api_host, port=config.api_port)
