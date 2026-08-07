@@ -2,11 +2,15 @@ import os
 import random
 import re
 from typing import List, Dict, Any, TypedDict
-from langchain_community.chat_models import ChatOllama
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langgraph.graph import StateGraph, END
 
-# 1. Описание функций в формате JSON Schema
+# Загрузка переменных окружения из .env файла
+load_dotenv()
+
+# 1. Описание функций в формате JSON Schema для function calling LLM
 flight_functions = [
     {
         "type": "function",
@@ -84,7 +88,7 @@ flight_functions = [
     }
 ]
 
-# 2. Мок-данные и функции-заглушки
+# 2. Мок-данные (база рейсов) и функции-заглушки для имитации внешнего API
 flights_db = {
     "FL123": {
         "origin": "Moscow",
@@ -107,7 +111,7 @@ flights_db = {
 }
 
 def search_flights(origin: str, destination: str, date: str) -> List[Dict]:
-    """Поиск рейсов по городу вылета, городу прилёта и дате"""
+    """Поиск рейсов по городу вылета, городу прилёта и дате."""
     results = []
     for fid, info in flights_db.items():
         if (info["origin"].lower() == origin.lower() and
@@ -123,14 +127,14 @@ def search_flights(origin: str, destination: str, date: str) -> List[Dict]:
     return results
 
 def check_availability(flight_id: str, seat_class: str) -> Dict:
-    """Проверка наличия свободных мест на рейсе и классе"""
+    """Проверка наличия свободных мест на конкретном рейсе и классе."""
     if flight_id not in flights_db:
         return {"available": False, "error": "Рейс не найден"}
     seats = flights_db[flight_id]["available"].get(seat_class, 0)
     return {"available": seats > 0, "seats_left": seats}
 
 def book_flight(flight_id: str, passenger_name: str, seat_class: str) -> Dict:
-    """Бронирование билета с уменьшением количества мест"""
+    """Бронирование билета с уменьшением количества свободных мест."""
     if flight_id not in flights_db:
         return {"success": False, "error": "Рейс не найден"}
     seats = flights_db[flight_id]["available"].get(seat_class, 0)
@@ -152,17 +156,21 @@ available_functions = {
     "book_flight": book_flight,
 }
 
-# 3. Инициализация LLM (локальный Ollama)
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:latest")
-print(f"Инициализация локальной LLM: {OLLAMA_MODEL} (Ollama)")
-llm = ChatOllama(
-    model=OLLAMA_MODEL,
-    temperature=0,
-    num_ctx=4096,
-)
-llm_with_tools = llm.bind_tools(flight_functions, tool_choice="auto")
+# 3. Инициализация LLM через LM Studio (локальный сервер) с привязкой инструментов
+# Для LM Studio ключ не требуется, но LangChain ожидает его наличие
+os.environ.setdefault("OPENAI_API_KEY", "dummy")
 
-# 4. Подключение трейсинга Arize Phoenix (опционально)
+llm = ChatOpenAI(
+    base_url="http://localhost:1234/v1",          # стандартный адрес LM Studio
+    api_key="dummy",                              # можно любое значение
+    model="qwen/qwen3.5-9b",                      # точное имя модели из LM Studio
+    temperature=0,
+)
+
+# Привязываем инструменты (если модель поддерживает function calling)
+llm_with_tools = llm.bind_tools(flight_functions)
+
+# 4. Подключение трейсинга Arize Phoenix для мониторинга вызовов (опционально)
 try:
     from phoenix.otel import register
     from openinference.instrumentation.langchain import LangChainInstrumentor
@@ -178,9 +186,9 @@ except ImportError:
 except Exception as e:
     print(f"Ошибка подключения Phoenix: {e}")
 
-# 5. Умная заглушка для тестирования без API-ключа
+# 5. Умная заглушка для тестирования без подключённого LLM (парсинг запроса regex и эмуляция вызовов инструментов)
 def fallback_stub(messages: List[Any]) -> AIMessage:
-    """Генерирует ответ с вызовом инструментов на основе текста запроса"""
+    """Генерирует ответ с вызовом инструментов на основе текста запроса (запасной вариант)."""
     query_text = " ".join([m.content if hasattr(m, 'content') else str(m) for m in messages])
     query_lower = query_text.lower()
 
@@ -250,7 +258,6 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
                 }]
             )
         else:
-            # После поиска переходим к проверке доступности
             return AIMessage(
                 content="Проверяю доступность мест...",
                 tool_calls=[{
@@ -286,12 +293,12 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
                     '"Забронируй билет из Москвы в Дубай на 10 августа"'
         )
 
-# 6. LangGraph: состояние, узлы и граф
+# 6. LangGraph: определение состояния агента, узлов (agent, tools) и направленного графа обработки запроса
 class AgentState(TypedDict):
     messages: List[Any]
 
 def agent_node(state: AgentState):
-    """Узел агента - вызов LLM с текущими сообщениями"""
+    """Узел агента - вызов LLM с текущими сообщениями."""
     messages = state["messages"]
     try:
         response = llm_with_tools.invoke(messages)
@@ -307,7 +314,7 @@ def agent_node(state: AgentState):
     return {"messages": [response]}
 
 def tools_node(state: AgentState):
-    """Узел выполнения инструментов - вызов функций и возврат результатов"""
+    """Узел выполнения инструментов - вызов функций и возврат результатов."""
     messages = state["messages"]
     last_message = messages[-1]
     tool_calls = last_message.tool_calls
@@ -331,7 +338,7 @@ def tools_node(state: AgentState):
     return {"messages": results}
 
 def should_continue(state: AgentState):
-    """Условие перехода - в tools при наличии tool_calls, иначе END"""
+    """Условие перехода - в tools при наличии tool_calls, иначе END."""
     messages = state["messages"]
     last_message = messages[-1]
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
@@ -352,9 +359,9 @@ workflow.add_edge("tools", "agent")   # После выполнения инст
 
 app = workflow.compile()
 
-# 7. Функция запуска агента и тестовый запуск
+# 7. Функция запуска агента с запросом и тестовый запуск
 def run_agent(query: str) -> str:
-    """Запуск агента с запросом и возврат финального ответа"""
+    """Запуск агента с запросом и возврат финального ответа."""
     initial_messages = [HumanMessage(content=query)]
     final_state = app.invoke({"messages": initial_messages})
     # Ищем последнее сообщение от агента без вызовов инструментов
@@ -364,7 +371,7 @@ def run_agent(query: str) -> str:
     return "Не удалось получить ответ от агента."
 
 def run_test_agent():
-    """Запуск тестового запроса"""
+    """Запуск тестового запроса."""
     test_query = (
         "Забронируй мне билет эконом-классом из Москвы в Дубай на 10 августа 2026 "
         "для пассажира Иванова Ивана Ивановича."
