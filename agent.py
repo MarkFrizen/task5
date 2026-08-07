@@ -277,29 +277,30 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
     else:
         seat_class = 'economy'
 
-    # Логика: если запрос на бронирование, имитируем цепочку вызовов
+    # Логика: проверяем есть ли уже результаты выполнения инструментов
+    has_tool_results = any(isinstance(m, ToolMessage) for m in messages)
+    
+    # Если уже выполнялись инструменты - возвращаем финальный ответ
+    if has_tool_results:
+        return AIMessage(
+            content=(
+                f"Билет успешно забронирован! Рейс {origin} → {destination} "
+                f"на {extracted_date}, класс: {seat_class}. "
+                f"Пассажир: {passenger}."
+            )
+        )
+    
+    # Если запрос на бронирование, имитируем цепочку вызовов
     if any(kw in query_lower for kw in ['забронир', 'купить', 'book', 'оформить']):
-        has_search = any('search_flights' in str(m) for m in messages if hasattr(m, 'content'))
-        if not has_search:
-            return AIMessage(
-                content="Сначала найду доступные рейсы...",
-                tool_calls=[{
-                    "name": "search_flights",
-                    "args": {"origin": origin, "destination": destination, "date": extracted_date},
-                    "id": "stub_search_1",
-                    "type": "tool_call"
-                }]
-            )
-        else:
-            return AIMessage(
-                content="Проверяю доступность мест...",
-                tool_calls=[{
-                    "name": "check_availability",
-                    "args": {"flight_id": "FL123", "seat_class": seat_class},
-                    "id": "stub_check_1",
-                    "type": "tool_call"
-                }]
-            )
+        return AIMessage(
+            content="Сначала найду доступные рейсы...",
+            tool_calls=[{
+                "name": "search_flights",
+                "args": {"origin": origin, "destination": destination, "date": extracted_date},
+                "id": "stub_search_1",
+                "type": "tool_call"
+            }]
+        )
     elif any(kw in query_lower for kw in ['найди', 'search', 'поиск', 'найти']):
         return AIMessage(
             content="Ищу доступные рейсы...",
@@ -442,22 +443,12 @@ workflow.add_edge("tools", "agent")   # после выполнения инст
 app = workflow.compile()
 
 # 7. Функция запуска агента и тестовый запуск
-def run_agent(query: str) -> str:
-    """Запуск агента с запросом и возврат финального ответа"""
-    initial_messages = [HumanMessage(content=query)]
-    final_state = app.invoke({"messages": initial_messages})
-    for msg in reversed(final_state["messages"]):
-        if isinstance(msg, AIMessage) and not msg.tool_calls:
-            return msg.content
-    return "Не удалось получить ответ от агента."
-
 # Добавляем лимит итераций чтобы избежать зацикливания
-app_with_limit = workflow.compile(recursion_limit=10)
 
 def run_agent(query: str) -> str:
     """Запуск агента с запросом и возврат финального ответа"""
     initial_messages = [HumanMessage(content=query)]
-    final_state = app_with_limit.invoke({"messages": initial_messages})
+    final_state = app.invoke({"messages": initial_messages}, config={"recursion_limit": 10})
     for msg in reversed(final_state["messages"]):
         if isinstance(msg, AIMessage) and not msg.tool_calls:
             return msg.content
