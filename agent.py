@@ -9,6 +9,7 @@ from typing import List, Dict, Any, TypedDict
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
+from langchain_core.messages import convert_to_openai_messages
 from langgraph.graph import StateGraph, END
 
 # Загрузка переменных окружения из файла .env
@@ -173,7 +174,7 @@ llm = ChatOpenAI(
 )
 
 # Привязываем инструменты для function calling
-llm_with_tools = llm.bind_tools(flight_functions)
+llm_with_tools = llm.bind_tools(flight_functions, tool_choice="auto")
 
 # 4. Подключение трейсинга Arize Phoenix опционально
 def _is_port_in_use(port: int) -> bool:
@@ -329,6 +330,61 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
 class AgentState(TypedDict):
     messages: List[Any]
 
+def _invoke_llm_with_retry(messages: List[Any], tools: bool = True) -> AIMessage:
+    """Вызов LLM с явным преобразованием в OpenAI формат и обработкой ошибок"""
+    from openai import OpenAI as SyncOpenAI
+    
+    import httpx
+    
+    # Преобразуем сообщения LangChain в OpenAI формат
+    openai_messages = convert_to_openai_messages(messages)
+    
+    # Создаем sync клиент напрямую с таймаутом
+    client = SyncOpenAI(
+        base_url="http://192.168.8.11:1234/v1",
+        api_key="dummy",
+        timeout=httpx.Timeout(10.0, connect=5.0),  # 10s read, 5s connect
+    )
+    
+    # Форматируем функции для OpenAI API
+    openai_functions = flight_functions
+    
+    try:
+        if tools:
+            response = client.chat.completions.create(
+                model="qwen/qwen3.5-9b",
+                messages=openai_messages,
+                tools=openai_functions,
+                tool_choice="auto",
+                temperature=0,
+            )
+        else:
+            response = client.chat.completions.create(
+                model="qwen/qwen3.5-9b",
+                messages=openai_messages,
+                temperature=0,
+            )
+        
+        # Преобразуем ответ в AIMessage
+        choice = response.choices[0]
+        ai_msg = AIMessage(
+            content=choice.message.content or "",
+            additional_kwargs={"function_call": choice.message.tool_calls},
+        )
+        
+        # Добавляем tool_calls если есть
+        if choice.message.tool_calls:
+            ai_msg.tool_calls = [{
+                "name": tc.function.name,
+                "args": tc.function.arguments and eval(tc.function.arguments) or {},
+                "id": tc.id,
+                "type": "tool_call"
+            } for tc in choice.message.tool_calls]
+        
+        return ai_msg
+    except Exception as e:
+        raise e
+
 def agent_node(state: AgentState):
     """Узел агента - вызов LLM с текущими сообщениями"""
     messages = state["messages"]
@@ -336,12 +392,13 @@ def agent_node(state: AgentState):
     has_system = any(isinstance(m, SystemMessage) for m in messages)
     if not has_system:
         messages = [SystemMessage(content="You are a helpful assistant that helps users book flights.")] + messages
+    
     try:
-        response = llm_with_tools.invoke(messages)
+        response = _invoke_llm_with_retry(messages, tools=True)
     except Exception as e:
         print(f"Ошибка вызова LLM с инструментами: {e}")
         try:
-            response = llm.invoke(messages)
+            response = _invoke_llm_with_retry(messages, tools=False)
         except Exception as e2:
             print(f"Ошибка Fallback LLM: {e2}")
             print("Использование умной заглушки для тестирования...")
