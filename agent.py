@@ -1,12 +1,12 @@
 import os
 import random
-from typing import List, Dict, Any, TypedDict, TypedDict
+import re
+from typing import List, Dict, Any, TypedDict
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langgraph.graph import StateGraph, END
 
-# Загрузка переменных окружения из .env файла
-# Описание инструментов в JSON Schema для LLM
+# 1. Описание функций в формате JSON Schema
 flight_functions = [
     {
         "type": "function",
@@ -84,7 +84,7 @@ flight_functions = [
     }
 ]
 
-# Базовые данные рейсов в формате заглушки
+# 2. Мок-данные и функции-заглушки
 flights_db = {
     "FL123": {
         "origin": "Moscow",
@@ -107,7 +107,7 @@ flights_db = {
 }
 
 def search_flights(origin: str, destination: str, date: str) -> List[Dict]:
-    """ Поиск рейсов по городу вылета, городу прилёта и дате """
+    """Поиск рейсов по городу вылета, городу прилёта и дате"""
     results = []
     for fid, info in flights_db.items():
         if (info["origin"].lower() == origin.lower() and
@@ -123,14 +123,14 @@ def search_flights(origin: str, destination: str, date: str) -> List[Dict]:
     return results
 
 def check_availability(flight_id: str, seat_class: str) -> Dict:
-    """ Проверка наличия свободных мест на конкретном рейсе и классе """
+    """Проверка наличия свободных мест на рейсе и классе"""
     if flight_id not in flights_db:
         return {"available": False, "error": "Рейс не найден"}
     seats = flights_db[flight_id]["available"].get(seat_class, 0)
     return {"available": seats > 0, "seats_left": seats}
 
 def book_flight(flight_id: str, passenger_name: str, seat_class: str) -> Dict:
-    """ Бронирование билета с уменьшением количества свободных мест """
+    """Бронирование билета с уменьшением количества мест"""
     if flight_id not in flights_db:
         return {"success": False, "error": "Рейс не найден"}
     seats = flights_db[flight_id]["available"].get(seat_class, 0)
@@ -146,22 +146,18 @@ def book_flight(flight_id: str, passenger_name: str, seat_class: str) -> Dict:
         "class": seat_class,
         "message": f"Бронирование {booking_id} успешно создано!"
     }
-
-# Словарь связывания имён функций с реальными функциями
 available_functions = {
     "search_flights": search_flights,
     "check_availability": check_availability,
     "book_flight": book_flight,
 }
 
-# Инициализация LLM через OpenRouter API
-# Установите OPENROUTER_API_KEY в环境变量 для работы
+# 3. Инициализация LLM (OpenRouter или локальный сервер)
 openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
 if not openrouter_api_key:
     print("⚠️  OPENROUTER_API_KEY не установлен. Используется заглушка для тестирования.")
     openrouter_api_key = "dummy"
     os.environ.setdefault("OPENAI_API_KEY", "dummy")
-
 llm = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=openrouter_api_key,
@@ -170,14 +166,12 @@ llm = ChatOpenAI(
     model_kwargs={"parallel_tool_calls": False},
     timeout=120,
 )
-
-# Привязка инструментов к LLM
 llm_with_tools = llm.bind_tools(flight_functions, tool_choice="auto")
 
-# Подключение трейсинга Arize Phoenix
+# 4. Подключение трейсинга Arize Phoenix (опционально)
 try:
     from phoenix.otel import register
-    from langchain_instrumentation import LangChainInstrumentor
+    from openinference.instrumentation.langchain import LangChainInstrumentor
 
     tracer_provider = register(
         project_name="flight-booking-agent",
@@ -190,55 +184,136 @@ except ImportError:
 except Exception as e:
     print(f"Ошибка подключения Phoenix: {e}")
 
-# Определение состояния агента
+# 5. Умная заглушка для тестирования без API-ключа
+def fallback_stub(messages: List[Any]) -> AIMessage:
+    """Генерирует ответ с вызовом инструментов на основе текста запроса"""
+    query_text = " ".join([m.content if hasattr(m, 'content') else str(m) for m in messages])
+    query_lower = query_text.lower()
+
+    # Извлечение города вылета
+    origin_match = re.search(r'из\s+(москв|питер|санкт|казань|екатеринбург|новосибирск)', query_lower)
+    origin_map = {
+        'москв': 'Москва',
+        'питер': 'Санкт-Петербург',
+        'санкт': 'Санкт-Петербург',
+        'казань': 'Казань',
+        'екатеринбург': 'Екатеринбург',
+        'новосибирск': 'Новосибирск'
+    }
+    origin = origin_map.get(origin_match.group(1) if origin_match else '', 'Москва')
+
+    # Извлечение города прилёта
+    dest_match = re.search(r'в\s+(дубай|лондон|париж|берлин|тамбов)', query_lower)
+    dest_map = {
+        'дубай': 'Дубай',
+        'лондон': 'Лондон',
+        'париж': 'Париж',
+        'берлин': 'Берлин',
+        'тамбов': 'Тамбов'
+    }
+    destination = dest_map.get(dest_match.group(1) if dest_match else '', 'Дубай')
+
+    # Извлечение даты
+    date_match = re.search(r'(\d{1,2})\s+(январ|феврал|мар|апрел|май|июн|июл|август|сентябр|октябр|ноябр|декабр)\s+(\d{4})', query_text)
+    if date_match:
+        day = date_match.group(1).zfill(2)
+        month_str = date_match.group(2)
+        year = date_match.group(3)
+        month_map = {
+            'январ': '01', 'феврал': '02', 'мар': '03', 'апрел': '04',
+            'май': '05', 'июн': '06', 'июл': '07', 'август': '08',
+            'сентябр': '09', 'октябр': '10', 'ноябр': '11', 'декабр': '12'
+        }
+        month = month_map.get(month_str, '08')
+        extracted_date = f"{year}-{month}-{day}"
+    else:
+        extracted_date = "2026-08-10"
+
+    # Извлечение имени пассажира
+    pass_match = re.search(r'для\s+пассажира\s+([^.,]+?)[\.,]?\s*$', query_text)
+    passenger = pass_match.group(1).strip() if pass_match else 'Иванов Иван Иванович'
+
+    # Определение класса
+    if 'бизнес' in query_lower:
+        seat_class = 'business'
+    elif 'первый' in query_lower or 'first' in query_lower:
+        seat_class = 'first'
+    else:
+        seat_class = 'economy'
+
+    # Логика: если запрос на бронирование, имитируем цепочку вызовов
+    if any(kw in query_lower for kw in ['забронир', 'купить', 'book', 'оформить']):
+        # Проверяем, был ли уже выполнен поиск
+        has_search = any('search_flights' in str(m) for m in messages if hasattr(m, 'content'))
+        if not has_search:
+            return AIMessage(
+                content="Сначала найду доступные рейсы...",
+                tool_calls=[{
+                    "name": "search_flights",
+                    "args": {"origin": origin, "destination": destination, "date": extracted_date},
+                    "id": "stub_search_1",
+                    "type": "tool_call"
+                }]
+            )
+        else:
+            # После поиска переходим к проверке доступности
+            return AIMessage(
+                content="Проверяю доступность мест...",
+                tool_calls=[{
+                    "name": "check_availability",
+                    "args": {"flight_id": "FL123", "seat_class": seat_class},
+                    "id": "stub_check_1",
+                    "type": "tool_call"
+                }]
+            )
+    elif any(kw in query_lower for kw in ['найди', 'search', 'поиск', 'найти']):
+        return AIMessage(
+            content="Ищу доступные рейсы...",
+            tool_calls=[{
+                "name": "search_flights",
+                "args": {"origin": origin, "destination": destination, "date": extracted_date},
+                "id": "stub_search_1",
+                "type": "tool_call"
+            }]
+        )
+    elif any(kw in query_lower for kw in ['доступн', 'check', 'провер']):
+        return AIMessage(
+            content="Проверяю доступность...",
+            tool_calls=[{
+                "name": "check_availability",
+                "args": {"flight_id": "FL123", "seat_class": seat_class},
+                "id": "stub_check_1",
+                "type": "tool_call"
+            }]
+        )
+    else:
+        return AIMessage(
+            content="Я могу помочь с бронированием авиабилетов. Например: "
+                    '"Забронируй билет из Москвы в Дубай на 10 августа"'
+        )
+
+# 6. LangGraph: состояние, узлы и граф
 class AgentState(TypedDict):
     messages: List[Any]
 
 def agent_node(state: AgentState):
-    """ Узел агента - вызов LLM с текущими сообщениями """
+    """Узел агента - вызов LLM с текущими сообщениями"""
     messages = state["messages"]
     try:
         response = llm_with_tools.invoke(messages)
     except Exception as e:
-        # Если модель не поддерживает tool_calls, пробуем вызвать без инструментов
         print(f"Ошибка вызова LLM с инструментами: {e}")
         try:
+            # Пробуем без инструментов
             response = llm.invoke(messages)
         except Exception as e2:
-            # Fallback: используем заглушку для тестирования
             print(f"Ошибка Fallback LLM: {e2}")
-            print("Использование заглушки для тестирования...")
-            from langchain_core.messages import AIMessage
-            # Простая заглушка: парсим запрос и вызываем инструменты
-            query_text = " ".join([m.content if hasattr(m, 'content') else str(m) for m in messages])
-            
-            # Простой парсинг для тестовой заглушки
-            if "поиск" in query_text.lower() or "найди" in query_text.lower() or "найти" in query_text.lower():
-                response = AIMessage(
-                    content="Вызов search_flights для поиска рейсов",
-                    tool_calls=[{
-                        "name": "search_flights",
-                        "args": {"origin": "Москва", "destination": "Дубай", "date": "2026-08-10"},
-                        "id": "stub_1",
-                        "type": "tool_call"
-                    }]
-                )
-            elif "забронир" in query_text.lower() or "book" in query_text.lower():
-                response = AIMessage(
-                    content="Вызов search_flights для поиска рейсов",
-                    tool_calls=[{
-                        "name": "search_flights",
-                        "args": {"origin": "Москва", "destination": "Дубай", "date": "2026-08-10"},
-                        "id": "stub_1",
-                        "type": "tool_call"
-                    }]
-                )
-            else:
-                response = AIMessage(content="Для тестирования: используйте запрос на бронирование билета.")
+            print("Использование умной заглушки для тестирования...")
+            response = fallback_stub(messages)
     return {"messages": [response]}
 
 def tools_node(state: AgentState):
-    """ Узел выполнения инструментов - вызов функций и возврат результатов """
+    """Узел выполнения инструментов - вызов функций и возврат результатов"""
     messages = state["messages"]
     last_message = messages[-1]
     tool_calls = last_message.tool_calls
@@ -262,7 +337,7 @@ def tools_node(state: AgentState):
     return {"messages": results}
 
 def should_continue(state: AgentState):
-    """ Условие перехода - в tools при наличии tool_calls, иначе END """
+    """Условие перехода - в tools при наличии tool_calls, иначе END"""
     messages = state["messages"]
     last_message = messages[-1]
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
@@ -270,7 +345,7 @@ def should_continue(state: AgentState):
     else:
         return END
 
-# Создание графа LangGraph
+# Создание графа
 workflow = StateGraph(AgentState)
 workflow.add_node("agent", agent_node)
 workflow.add_node("tools", tools_node)
@@ -281,12 +356,11 @@ workflow.add_conditional_edges("agent", should_continue, {
 })
 workflow.add_edge("tools", "agent")   # После выполнения инструментов возвращаемся к агенту
 
-# Компиляция графа в исполняемое приложение
 app = workflow.compile()
 
-# Главная функция запуска агента по текстовому запросу
+# 7. Функция запуска агента и тестовый запуск
 def run_agent(query: str) -> str:
-    """ Запуск агента с запросом и возврат финального ответа """
+    """Запуск агента с запросом и возврат финального ответа"""
     initial_messages = [HumanMessage(content=query)]
     final_state = app.invoke({"messages": initial_messages})
     # Ищем последнее сообщение от агента без вызовов инструментов
@@ -296,7 +370,7 @@ def run_agent(query: str) -> str:
     return "Не удалось получить ответ от агента."
 
 def run_test_agent():
-    """ Запуск тестового запроса агента """
+    """Запуск тестового запроса"""
     test_query = (
         "Забронируй мне билет эконом-классом из Москвы в Дубай на 10 августа 2026 "
         "для пассажира Иванова Ивана Ивановича."
