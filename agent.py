@@ -4,10 +4,11 @@ import re
 import subprocess
 import socket
 import threading
+import traceback
 from typing import List, Dict, Any, TypedDict
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 
 # Загрузка переменных окружения из .env файла
@@ -166,12 +167,19 @@ os.environ.setdefault("OPENAI_API_KEY", "dummy")
 llm = ChatOpenAI(
     base_url="http://localhost:1234/v1",          # стандартный адрес LM Studio
     api_key="dummy",                              # можно любое значение
-    model="qwen/qwen3.5-9b",                      # точное имя модели из LM Studio
+    model="Qwen2.5-7B-Instruct",                      # точное имя модели из LM Studio
     temperature=0,
 )
 
 # Привязываем инструменты (если модель поддерживает function calling)
 llm_with_tools = llm.bind_tools(flight_functions)
+
+# Системный промпт для агента
+SYSTEM_PROMPT = """Ты — AI-агент для бронирования авиабилетов.
+Ты должен использовать доступные инструменты (search_flights, check_availability, book_flight) для выполнения запросов пользователя.
+После выполнения всех необходимых инструментов, предоставь итоговый ответ на русском языке.
+Твой ответ должен быть понятным и включать детали бронирования."""
+
 
 # 4. Подключение трейсинга Arize Phoenix для мониторинга вызовов (опционально)
 def _is_port_in_use(port: int) -> bool:
@@ -219,6 +227,7 @@ def init_phoenix():
         print("Phoenix не установлен, трейсинг отключён.")
     except Exception as e:
         print(f"Ошибка подключения Phoenix: {e}")
+        traceback.print_exc()
 
 # 5. Умная заглушка для тестирования без подключённого LLM (парсинг запроса regex и эмуляция вызовов инструментов)
 def fallback_stub(messages: List[Any]) -> AIMessage:
@@ -334,6 +343,9 @@ class AgentState(TypedDict):
 def agent_node(state: AgentState):
     """Узел агента - вызов LLM с текущими сообщениями."""
     messages = state["messages"]
+    # Добавляем системный промпт, если его ещё нет
+    if not messages or not isinstance(messages[0], SystemMessage):
+        messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
     try:
         response = llm_with_tools.invoke(messages)
     except Exception as e:
