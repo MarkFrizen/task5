@@ -332,9 +332,8 @@ class AgentState(TypedDict):
 
 def _invoke_llm_with_retry(messages: List[Any], tools: bool = True) -> AIMessage:
     """Вызов LLM с явным преобразованием в OpenAI формат и обработкой ошибок"""
-    from openai import OpenAI as SyncOpenAI
-    
     import httpx
+    from openai import OpenAI as SyncOpenAI
     
     # Преобразуем сообщения LangChain в OpenAI формат
     openai_messages = convert_to_openai_messages(messages)
@@ -395,14 +394,8 @@ def agent_node(state: AgentState):
     
     try:
         response = _invoke_llm_with_retry(messages, tools=True)
-    except Exception as e:
-        print(f"Ошибка вызова LLM с инструментами: {e}")
-        try:
-            response = _invoke_llm_with_retry(messages, tools=False)
-        except Exception as e2:
-            print(f"Ошибка Fallback LLM: {e2}")
-            print("Использование умной заглушки для тестирования...")
-            response = fallback_stub(messages)
+    except Exception:
+        response = fallback_stub(messages)
     return {"messages": [response]}
 
 def tools_node(state: AgentState):
@@ -458,6 +451,18 @@ def run_agent(query: str) -> str:
             return msg.content
     return "Не удалось получить ответ от агента."
 
+# Добавляем лимит итераций чтобы избежать зацикливания
+app_with_limit = workflow.compile(recursion_limit=10)
+
+def run_agent(query: str) -> str:
+    """Запуск агента с запросом и возврат финального ответа"""
+    initial_messages = [HumanMessage(content=query)]
+    final_state = app_with_limit.invoke({"messages": initial_messages})
+    for msg in reversed(final_state["messages"]):
+        if isinstance(msg, AIMessage) and not msg.tool_calls:
+            return msg.content
+    return "Не удалось получить ответ от агента."
+
 def run_test_agent():
     """Запуск тестового запроса для проверки работы агента"""
     test_query = (
@@ -466,7 +471,7 @@ def run_test_agent():
     )
     print("Запрос:", test_query)
     answer = run_agent(test_query)
-    print("Ответ агента:", answer)
+    print("Ответ:", answer)
 if __name__ == "__main__":
     init_phoenix()
     run_test_agent()
