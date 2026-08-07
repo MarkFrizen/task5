@@ -454,15 +454,16 @@ def run_agent(query: str) -> str:
             return msg.content
     return "Не удалось получить ответ от агента."
 
-def run_test_agent():
-    """Запуск тестового запроса для проверки работы агента"""
-    test_query = (
-        "Забронируй мне билет эконом-классом из Москвы в Дубай на 10 августа 2026 "
-        "для пассажира Иванова Ивана Ивановича."
-    )
-    print("Запрос:", test_query)
-    answer = run_agent(test_query)
-    print("Ответ:", answer)
+def run_interactive_agent():
+    """Интерактивный режим - запрос вводится с клавиатуры"""
+    print("\n=== Flight Booking Agent ===")
+    print("Введите запрос (или 'exit' для выхода):\n")
+    while True:
+        query = input("> ").strip()
+        if not query or query.lower() in ('exit', 'quit', 'выйти'):
+            print("До свидания!")
+            break
+        print("\nОтвет:", run_agent(query))
 if __name__ == "__main__":
     init_phoenix()
-    run_test_agent()
+    run_interactive_agent()
