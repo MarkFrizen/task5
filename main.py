@@ -4,25 +4,23 @@ from pydantic import BaseModel
 from agent import run_agent, init_phoenix
 import os
 app = FastAPI(
-    title="Flight Booking Agent API",
-    description="API для бронирования авиабилетов с помощью AI-агента",
-    version="1.0.0"
+    title="Многофункциональный агент",
+    description="API для бронирования авиабилетов, отправки сообщений, курса валют и погоды"
 )
-class BookingRequest(BaseModel):
+class Request(BaseModel):
     query: str
 
-@app.post("/book", summary="Забронировать авиабилет через агента")
-async def book_flight(request: BookingRequest):
+@app.post("/execute")
+async def execute(request: Request):
     try:
-        # Запускаем синхронную функцию в отдельном потоке, чтобы не блокировать event loop
         answer = await asyncio.to_thread(run_agent, request.query)
         return {"response": answer}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/health", summary="Проверка работоспособности сервиса")
+@app.get("/health")
 async def health():
-    return {"status": "ok", "model": os.getenv("LLM_MODEL", "qwen/qwen3.5-9b (локально через LM Studio)")}
+    return {"status": "ok", "model": os.getenv("LLM_MODEL", "локальная")}
 if __name__ == "__main__":
     if os.getenv("PHOENIX_ENABLED", "false").lower() == "true":
         init_phoenix()
