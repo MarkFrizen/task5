@@ -269,6 +269,8 @@ llm = ChatOpenAI(
     api_key="dummy",                                                # фиктивный ключ
     model=os.getenv("LLM_MODEL", "qwen/qwen3.5-9b"),               # модель, загруженная в LM Studio
     temperature=float(os.getenv("LLM_TEMPERATURE", "0.0")),        # температура генерации
+    timeout=10,                                                      # таймаут HTTP-запроса (сек)
+    max_retries=0,                                                    # не повторять при ошибках
 )
 
 # Привязываем описанные инструменты к LLM
@@ -317,6 +319,16 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
     """
     query_text = " ".join([m.content if hasattr(m, 'content') else str(m) for m in messages])
     query_lower = query_text.lower()
+
+    # Если уже есть результаты выполнения инструментов — возвращаем финальный ответ
+    has_tool_results = any(isinstance(m, ToolMessage) for m in messages)
+    if has_tool_results:
+        # Собираем результаты инструментов для формирования ответа
+        tool_results = [m for m in messages if isinstance(m, ToolMessage)]
+        if tool_results:
+            last_result = tool_results[-1].content
+            return AIMessage(content=f"Готово. Результат: {last_result}")
+        return AIMessage(content="Запрос выполнен.")
 
     # --- Обработка отправки сообщения ---
     if "отправ" in query_lower and ("сообщен" in query_lower or "письм" in query_lower):
