@@ -176,7 +176,7 @@ def book_flight(flight_id: str, passenger_name: str, seat_class: str) -> Dict:
 
 def send_message(recipient: str, message: str, channel: str = "email") -> Dict:
     """Отправка сообщения (заглушка, только вывод в консоль)."""
-    print(f"\n📨 Отправка {channel} для {recipient}: {message}\n")
+    print(f"\nОтправка {channel} для {recipient}: {message}\n")
     return {"success": True, "channel": channel, "recipient": recipient, "message": message}
 
 # Кэш для курсов валют
@@ -303,9 +303,9 @@ def init_phoenix():
             LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
             print("✅ Трейсинг Phoenix подключён, доступен по адресу http://localhost:6006")
         else:
-            print("⚠️ Phoenix не запустился, трейсинг отключён.")
+            print("Phoenix не запустился, трейсинг отключён.")
     except (ImportError, Exception) as e:
-        print(f"⚠️ Phoenix не доступен: {e}")
+        print(f"Phoenix не доступен: {e}")
 
 # 5. Заглушка для работы без LLM
 # Если LLM недоступна, этот парсер анализирует запрос
@@ -415,7 +415,7 @@ def agent_node(state: AgentState):
     try:
         response = llm_with_tools.invoke(messages)
     except Exception as e:
-        print(f"⚠️ Ошибка LLM: {e}, используем fallback")
+        print(f"Ошибка LLM: {e}, используем fallback")
         response = fallback_stub(messages)
     return {"messages": [response]}
 
