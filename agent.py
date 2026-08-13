@@ -10,7 +10,10 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 from langgraph.graph import StateGraph, END
-load_dotenv()
+try:
+    load_dotenv()  # Загружает переменные из .env, если файл существует
+except Exception:
+    pass  # Работает без .env файла
 
 # 1. Описание функций в формате JSON Schema
 # Эти описания передаются в LLM, чтобы она знала,
