@@ -1,4 +1,3 @@
-# REST API для многофункционального агента на FastAPI
 import asyncio
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
