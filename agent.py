@@ -114,10 +114,16 @@ flight_functions = [
 ]
 
 # реализация функций инструментов
+# расширенная база рейсов с добавлением новых направлений
 flights_db = {
     "FL123": {"origin": "Moscow", "destination": "Dubai", "date": "2026-08-10", "available": {"economy": 10, "business": 3, "first": 1}},
     "FL456": {"origin": "Dubai", "destination": "London", "date": "2026-08-12", "available": {"economy": 5, "business": 0, "first": 2}},
     "FL789": {"origin": "Moscow", "destination": "Paris", "date": "2026-08-15", "available": {"economy": 20, "business": 4, "first": 0}},
+    "FL101": {"origin": "Moscow", "destination": "Minsk", "date": "2026-08-15", "available": {"economy": 15, "business": 2, "first": 0}},
+    "FL102": {"origin": "Moscow", "destination": "Kiev", "date": "2026-08-16", "available": {"economy": 12, "business": 1, "first": 0}},
+    "FL103": {"origin": "Moscow", "destination": "Astana", "date": "2026-08-17", "available": {"economy": 8, "business": 0, "first": 0}},
+    "FL104": {"origin": "Saint Petersburg", "destination": "Minsk", "date": "2026-08-18", "available": {"economy": 6, "business": 1, "first": 0}},
+    "FL105": {"origin": "Moscow", "destination": "Tashkent", "date": "2026-08-19", "available": {"economy": 9, "business": 2, "first": 1}},
 }
 
 def search_flights(origin: str, destination: str, date: str) -> List[Dict]:
@@ -325,7 +331,6 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
             except (json.JSONDecodeError, TypeError):
                 formatted_parts.append(str(tr))
         return AIMessage(content="\n".join(formatted_parts))
-
     query_lower = user_query.lower()
 
     # распознавание отправки сообщения
@@ -405,15 +410,43 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
 
     # распознавание поиска рейсов
     if any(kw in query_lower for kw in ("рейс", "билет", "лететь", "вылет", "прилет")):
-        origin_match = re.search(r'из\s+([А-Яа-я]+)', user_query)
-        dest_match = re.search(r'в\s+([А-Яа-я]+)', user_query)
-        origin = origin_match.group(1) if origin_match else "Москва"
-        destination = dest_match.group(1) if dest_match else "Дубай"
+        # извлекаем город вылета
+        origin_match = re.search(r'из\s+([А-Яа-яA-Za-z\- ]+)', user_query)
+        if not origin_match:
+            origin_match = re.search(r'откуда\s+([А-Яа-яA-Za-z\- ]+)', user_query)
+        origin = origin_match.group(1).strip() if origin_match else "Москва"
+
+        # извлекаем город прилёта
+        dest_match = re.search(r'в\s+([А-Яа-яA-Za-z\- ]+)', user_query)
+        if not dest_match:
+            dest_match = re.search(r'куда\s+([А-Яа-яA-Za-z\- ]+)', user_query)
+        if dest_match:
+            destination = dest_match.group(1).strip()
+        else:
+            # пробуем определить страну -> столицу
+            country_to_city = {
+                "беларусь": "Минск",
+                "украина": "Киев",
+                "казахстан": "Астана",
+                "узбекистан": "Ташкент"
+            }
+            found_country = None
+            for country, city in country_to_city.items():
+                if country in query_lower:
+                    found_country = city
+                    break
+            if found_country:
+                destination = found_country
+            else:
+                destination = "Дубай"  # fallback
+
+        # извлекаем дату
         date_match = re.search(r'(\d{2})[./](\d{2})[./](\d{4})', user_query)
         if date_match:
             date = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}"
         else:
-            date = "2026-08-10"
+            # если дата не указана, ставим сегодня+1 день
+            date = "2026-08-15"  # можно динамически генерировать
         return AIMessage(
             content="Ищу рейсы...",
             tool_calls=[{
