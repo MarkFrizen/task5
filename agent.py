@@ -368,8 +368,59 @@ def init_phoenix():
 class AgentState(TypedDict):
     messages: List[Any]
 
+# Форматирование результата инструмента в читаемую строку
+def format_tool_result(result):
+    if isinstance(result, list):
+        if not result:
+            return "Рейсы не найдены."
+        lines = ["Найденные рейсы:"]
+        for r in result:
+            seats = r.get('available_seats', {})
+            seats_str = ", ".join(f"{cls}: {cnt}" for cls, cnt in seats.items())
+            lines.append(f"  {r['flight_id']}: {r['origin']} -> {r['destination']}, {r['date']}, места: {seats_str}")
+        return "\n".join(lines)
+    if isinstance(result, dict):
+        if "success" in result:
+            if result["success"]:
+                msg = result.get('message', 'Операция успешна')
+                if 'booking_id' in result:
+                    msg += f" (ID брони: {result['booking_id']})"
+                return f"Успешно: {msg}"
+            else:
+                return f"Ошибка: {result.get('error', 'Неизвестная ошибка')}"
+        if "rate" in result:
+            return f"Курс {result['from']}/{result['to']}: {result['rate']} (источник: {result.get('source', 'неизвестно')})"
+        if "forecast" in result:
+            lines = [f"Прогноз для {result['city']}:"]
+            for f in result['forecast']:
+                lines.append(f"  {f['day']}: {f['temp']}°C, {f['condition']}")
+            return "\n".join(lines)
+        if "available" in result:
+            if result["available"]:
+                return f"Места есть (осталось {result.get('seats_left', '?')})"
+            else:
+                return "Мест нет"
+        return str(result)
+    return str(result)
+
 # Fallback-обработчик, если LLM недоступна или не поддерживает инструменты
 def fallback_handler(messages: List[Any]) -> AIMessage:
+    # Сначала проверяем, есть ли в истории результаты выполнения инструментов
+    tool_results = []
+    for m in messages:
+        if isinstance(m, ToolMessage):
+            try:
+                data = json.loads(m.content)
+                tool_results.append(data)
+            except:
+                tool_results.append(m.content)
+    if tool_results:
+        # Формируем ответ на основе результатов инструментов
+        formatted_parts = []
+        for tr in tool_results:
+            formatted_parts.append(format_tool_result(tr))
+        return AIMessage(content="\n".join(formatted_parts))
+    # Если результатов нет, анализируем исходный запрос пользователя
     user_query = ""
     for m in messages:
         if isinstance(m, HumanMessage):
