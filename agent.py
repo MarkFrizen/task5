@@ -232,7 +232,7 @@ llm = ChatOpenAI(
     api_key="dummy",
     model=os.getenv("LLM_MODEL", "qwen/qwen3.5-9b"),
     temperature=float(os.getenv("LLM_TEMPERATURE", "0.0")),
-    timeout=10,
+    timeout=60,
     max_retries=0,
 )
 llm_with_tools = llm.bind_tools(flight_functions, tool_choice="auto")
