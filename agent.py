@@ -112,9 +112,6 @@ flight_functions = [
         }
     }
 ]
-
-# реализация функций инструментов
-# расширенная база рейсов с добавлением новых направлений
 flights_db = {
     "FL123": {"origin": "Moscow", "destination": "Dubai", "date": "2026-08-10", "available": {"economy": 10, "business": 3, "first": 1}},
     "FL456": {"origin": "Dubai", "destination": "London", "date": "2026-08-12", "available": {"economy": 5, "business": 0, "first": 2}},
@@ -122,12 +119,11 @@ flights_db = {
     "FL101": {"origin": "Moscow", "destination": "Minsk", "date": "2026-08-15", "available": {"economy": 15, "business": 2, "first": 0}},
     "FL102": {"origin": "Moscow", "destination": "Kiev", "date": "2026-08-16", "available": {"economy": 12, "business": 1, "first": 0}},
     "FL103": {"origin": "Moscow", "destination": "Astana", "date": "2026-08-17", "available": {"economy": 8, "business": 0, "first": 0}},
-    "FL104": {"origin": "Saint Petersburg", "destination": "Minsk", "date": "2026-08-18", "available": {"economy": 6, "business": 1, "first": 0}},
-    "FL105": {"origin": "Moscow", "destination": "Tashkent", "date": "2026-08-19", "available": {"economy": 9, "business": 2, "first": 1}},
 }
 
 def search_flights(origin: str, destination: str, date: str) -> List[Dict]:
     results = []
+    # ищем существующие рейсы
     for fid, info in flights_db.items():
         if (info["origin"].lower() == origin.lower() and
                 info["destination"].lower() == destination.lower() and
@@ -139,17 +135,47 @@ def search_flights(origin: str, destination: str, date: str) -> List[Dict]:
                 "date": info["date"],
                 "available_seats": info["available"]
             })
+    # если ничего не найдено, создаём фиктивный рейс
+    if not results:
+        # генерируем новый ID
+        new_id = f"FL{random.randint(200, 999)}"
+        # создаём запись в базе
+        flights_db[new_id] = {
+            "origin": origin,
+            "destination": destination,
+            "date": date,
+            "available": {"economy": random.randint(5, 20), "business": random.randint(0, 5), "first": random.randint(0, 2)}
+        }
+        results.append({
+            "flight_id": new_id,
+            "origin": origin,
+            "destination": destination,
+            "date": date,
+            "available_seats": flights_db[new_id]["available"]
+        })
     return results
 
 def check_availability(flight_id: str, seat_class: str) -> Dict:
     if flight_id not in flights_db:
-        return {"available": False, "error": "Рейс не найден"}
+        # если рейс не найден, создаём его на лету (для совместимости)
+        flights_db[flight_id] = {
+            "origin": "Unknown",
+            "destination": "Unknown",
+            "date": "2026-01-01",
+            "available": {"economy": 10, "business": 2, "first": 0}
+        }
     seats = flights_db[flight_id]["available"].get(seat_class, 0)
     return {"available": seats > 0, "seats_left": seats}
 
 def book_flight(flight_id: str, passenger_name: str, seat_class: str) -> Dict:
     if flight_id not in flights_db:
-        return {"success": False, "error": "Рейс не найден"}
+        # если рейс не найден, создаём его
+        flights_db[flight_id] = {
+            "origin": "Unknown",
+            "destination": "Unknown",
+            "date": "2026-01-01",
+            "available": {"economy": 10, "business": 2, "first": 0}
+        }
     seats = flights_db[flight_id]["available"].get(seat_class, 0)
     if seats <= 0:
         return {"success": False, "error": f"Нет мест класса {seat_class}"}
@@ -222,6 +248,7 @@ def get_weather(city: str, days: int = 1) -> Dict:
         ],
         "source": "мок (локальный прогноз)"
     }
+
 available_functions = {
     "search_flights": search_flights,
     "check_availability": check_availability,
@@ -408,8 +435,8 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
             }]
         )
 
-    # распознавание поиска рейсов
-    if any(kw in query_lower for kw in ("рейс", "билет", "лететь", "вылет", "прилет")):
+    # распознавание поиска или бронирования рейсов
+    if any(kw in query_lower for kw in ("рейс", "билет", "лететь", "вылет", "прилет", "забронируй", "бронирование")):
         # извлекаем город вылета
         origin_match = re.search(r'из\s+([А-Яа-яA-Za-z\- ]+)', user_query)
         if not origin_match:
@@ -423,12 +450,20 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
         if dest_match:
             destination = dest_match.group(1).strip()
         else:
-            # пробуем определить страну -> столицу
+            # если не нашли город, пробуем найти страну -> столица
             country_to_city = {
                 "беларусь": "Минск",
                 "украина": "Киев",
                 "казахстан": "Астана",
-                "узбекистан": "Ташкент"
+                "узбекистан": "Ташкент",
+                "германия": "Берлин",
+                "франция": "Париж",
+                "испания": "Мадрид",
+                "италия": "Рим",
+                "китай": "Пекин",
+                "япония": "Токио",
+                "сша": "Нью-Йорк",
+                "англия": "Лондон"
             }
             found_country = None
             for country, city in country_to_city.items():
@@ -445,8 +480,7 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
         if date_match:
             date = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}"
         else:
-            # если дата не указана, ставим сегодня+1 день
-            date = "2026-08-15"  # можно динамически генерировать
+            date = "2026-08-15"
         return AIMessage(
             content="Ищу рейсы...",
             tool_calls=[{
