@@ -1,6 +1,5 @@
 import os
 import random
-import re
 import socket
 import subprocess
 import threading
