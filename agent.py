@@ -1,5 +1,6 @@
 import os
 import random
+import re
 import socket
 import subprocess
 import threading
@@ -226,7 +227,6 @@ def search_flights(origin: str, destination: str, date: str) -> List[Dict]:
             "available_seats": flights_db[new_id]["available"]
         })
     return results
-
 def check_availability(flight_id: str, seat_class: str) -> Dict:
     if flight_id not in flights_db:
         flights_db[flight_id] = {
@@ -237,7 +237,6 @@ def check_availability(flight_id: str, seat_class: str) -> Dict:
         }
     seats = flights_db[flight_id]["available"].get(seat_class, 0)
     return {"available": seats > 0, "seats_left": seats}
-
 def book_flight(flight_id: str, passenger_name: str, seat_class: str) -> Dict:
     if flight_id not in flights_db:
         flights_db[flight_id] = {
@@ -259,12 +258,10 @@ def book_flight(flight_id: str, passenger_name: str, seat_class: str) -> Dict:
         "class": seat_class,
         "message": f"Бронирование {booking_id} успешно"
     }
-
 def send_message(recipient: str, message: str, channel: str = "email") -> Dict:
     print(f"\nОтправка {channel} для {recipient}: {message}\n")
     return {"success": True, "channel": channel, "recipient": recipient, "message": message}
 _exchange_cache = {}
-
 def get_exchange_rate(from_currency: str, to_currency: str) -> Dict:
     from_cur = from_currency.upper()
     to_cur = to_currency.upper()
@@ -305,7 +302,6 @@ def get_exchange_rate(from_currency: str, to_currency: str) -> Dict:
     }
     _exchange_cache[cache_key] = result
     return result
-
 def get_weather(city: str, days: int = 1) -> Dict:
     return {
         "city": city,
@@ -345,7 +341,6 @@ llm_with_tools = llm.bind_tools(flight_functions, tool_choice="auto")
 def _is_port_in_use(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(('localhost', port)) == 0
-
 def init_phoenix():
     try:
         from phoenix.otel import register
@@ -373,20 +368,144 @@ def init_phoenix():
 class AgentState(TypedDict):
     messages: List[Any]
 
-# Узел агента, вызывающий LLM с инструментами
+# Fallback-обработчик, если LLM недоступна или не поддерживает инструменты
+def fallback_handler(messages: List[Any]) -> AIMessage:
+    user_query = ""
+    for m in messages:
+        if isinstance(m, HumanMessage):
+            user_query += m.content + " "
+    user_query = user_query.strip()
+    query_lower = user_query.lower()
+    # Распознавание команды отправки сообщения
+    if any(kw in query_lower for kw in ("отправ", "письм", "сообщен", "напиши")):
+        recipient_match = re.search(r'(?:для|получател[юе]?|кому|адресат[у]?)\s+([А-Яа-яA-Za-z\-]+)', user_query)
+        if not recipient_match:
+            recipient_match = re.search(r'(?:сообщен[ие]|письм[оа])\s+([А-Яа-яA-Za-z\-]+)', user_query)
+        recipient = recipient_match.group(1).strip() if recipient_match else "Владимир"
+        msg_match = re.search(r'["\'](.*?)["\']', user_query)
+        if not msg_match:
+            msg_match = re.search(r'(?:сообщен(?:ие|ия?)|текст)\s+([^.,]+?)(?:[,.]|$)', user_query)
+        message = msg_match.group(1).strip() if msg_match else "Привет!"
+        channel = "email"
+        if "телеграм" in query_lower or "telegram" in query_lower:
+            channel = "telegram"
+        elif "смс" in query_lower or "sms" in query_lower:
+            channel = "sms"
+        return AIMessage(
+            content="Отправляю сообщение...",
+            tool_calls=[{
+                "name": "send_message",
+                "args": {"recipient": recipient, "message": message, "channel": channel},
+                "id": "fallback_send_1",
+                "type": "tool_call"
+            }]
+        )
+    # Распознавание курса валют
+    if any(kw in query_lower for kw in ("курс", "валют", "доллар", "евро", "рубл", "фунт")):
+        currency_map = {"доллар": "USD", "евро": "EUR", "рубль": "RUB", "фунт": "GBP"}
+        found = re.findall(r'\b(USD|EUR|RUB|GBP|доллар|евро|рубль|фунт)\b', user_query, re.IGNORECASE)
+        codes = []
+        for f in found:
+            f_upper = f.upper()
+            if f_upper in currency_map:
+                codes.append(currency_map[f_upper])
+            elif f_upper in ["USD","EUR","RUB","GBP"]:
+                codes.append(f_upper)
+        if len(codes) >= 2:
+            from_cur, to_cur = codes[0], codes[1]
+        else:
+            if "доллар" in query_lower or "USD" in query_lower:
+                from_cur, to_cur = "USD", "EUR"
+            elif "евро" in query_lower or "EUR" in query_lower:
+                from_cur, to_cur = "EUR", "USD"
+            else:
+                from_cur, to_cur = "USD", "RUB"
+        return AIMessage(
+            content=f"Запрашиваю курс {from_cur}/{to_cur}...",
+            tool_calls=[{
+                "name": "get_exchange_rate",
+                "args": {"from_currency": from_cur, "to_currency": to_cur},
+                "id": "fallback_rate_1",
+                "type": "tool_call"
+            }]
+        )
+    # Распознавание погоды
+    if any(kw in query_lower for kw in ("погод", "weather", "температур")):
+        city_match = re.search(r'(?:в|для|город[е]?)\s+([А-Яа-яA-Za-z\-]+)', user_query)
+        city = city_match.group(1) if city_match else "Москва"
+        days_match = re.search(r'на\s+(\d+)\s+дн', query_lower)
+        days = int(days_match.group(1)) if days_match else 1
+        return AIMessage(
+            content=f"Получаю погоду для {city} на {days} дн...",
+            tool_calls=[{
+                "name": "get_weather",
+                "args": {"city": city, "days": days},
+                "id": "fallback_weather_1",
+                "type": "tool_call"
+            }]
+        )
+    # Распознавание поиска рейсов
+    if any(kw in query_lower for kw in ("рейс", "билет", "лететь", "вылет", "прилет", "забронируй", "бронирование")):
+        origin_match = re.search(r'из\s+([А-Яа-яA-Za-z\- ]+)', user_query)
+        if not origin_match:
+            origin_match = re.search(r'откуда\s+([А-Яа-яA-Za-z\- ]+)', user_query)
+        origin = origin_match.group(1).strip() if origin_match else "Москва"
+        dest_match = re.search(r'в\s+([А-Яа-яA-Za-z\- ]+)', user_query)
+        if not dest_match:
+            dest_match = re.search(r'куда\s+([А-Яа-яA-Za-z\- ]+)', user_query)
+        if dest_match:
+            destination = dest_match.group(1).strip()
+        else:
+            country_to_city = {
+                "беларусь": "Minsk", "украина": "Kiev", "казахстан": "Astana",
+                "узбекистан": "Tashkent", "германия": "Berlin", "франция": "Paris",
+                "испания": "Madrid", "италия": "Rome", "китай": "Beijing",
+                "япония": "Tokyo", "сша": "New York", "англия": "London",
+                "турция": "Istanbul", "оаэ": "Dubai"
+            }
+            found_country = None
+            for country, city in country_to_city.items():
+                if country in query_lower:
+                    found_country = city
+                    break
+            destination = found_country if found_country else "Dubai"
+        date_match = re.search(r'(\d{2})[./](\d{2})[./](\d{4})', user_query)
+        if date_match:
+            date = f"{date_match.group(3)}-{date_match.group(2)}-{date_match.group(1)}"
+        else:
+            date = "2026-08-15"
+        return AIMessage(
+            content="Ищу рейсы...",
+            tool_calls=[{
+                "name": "search_flights",
+                "args": {"origin": origin, "destination": destination, "date": date},
+                "id": "fallback_flight_1",
+                "type": "tool_call"
+            }]
+        )
+    # Общий ответ
+    return AIMessage(
+        content="Я могу помочь с поиском и бронированием авиабилетов, отправкой сообщений, курсом валют и прогнозом погоды. Что вы хотите сделать?"
+    )
+
+# Узел агента, вызывающий LLM с инструментами, с fallback при ошибке
 def agent_node(state: AgentState):
     messages = state["messages"]
+    # Добавляем системное сообщение, если его ещё нет
     if not any(isinstance(m, SystemMessage) for m in messages):
         system_msg = SystemMessage(content=(
             "You are a helpful assistant with tools: search_flights, check_availability, book_flight, "
             "send_message, get_exchange_rate, get_weather. Always respond in Russian."
         ))
         messages = [system_msg] + messages
+    # Если последнее сообщение - ToolMessage, добавляем фиктивное сообщение пользователя
+    if messages and isinstance(messages[-1], ToolMessage):
+        messages.append(HumanMessage(content="Продолжи"))
     try:
         response = llm_with_tools.invoke(messages)
     except Exception as e:
-        error_msg = f"Извините, произошла ошибка при обращении к модели: {e}"
-        response = AIMessage(content=error_msg)
+        print(f"Ошибка при вызове LLM: {e}. Использую fallback.")
+        response = fallback_handler(messages)
     return {"messages": [response]}
 
 # Узел выполнения инструментов
@@ -444,7 +563,7 @@ def run_agent(query: str) -> str:
 
 # Интерактивный режим общения
 def run_interactive_agent():
-    print("\nМногофункциональный агент")
+    print("\nМногофункциональный агент база Аэрофлота")
     print("Доступные действия: поиск и бронирование авиабилетов, отправка сообщений, курс валют, погода.")
     print("Введите запрос или exit для выхода\n")
     while True:
