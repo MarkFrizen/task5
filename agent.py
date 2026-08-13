@@ -16,10 +16,8 @@ try:
 except Exception:
     pass
 
-# описание инструментов для LLM в формате JSON Schema
-# эти описания сообщают модели, какие функции доступны и какие параметры ожидаются
+# Описание инструментов в формате JSON Schema для передачи в LLM
 flight_functions = [
-    # поиск рейсов
     {
         "type": "function",
         "function": {
@@ -36,7 +34,6 @@ flight_functions = [
             }
         }
     },
-    # проверка наличия мест
     {
         "type": "function",
         "function": {
@@ -52,7 +49,6 @@ flight_functions = [
             }
         }
     },
-    # бронирование билета
     {
         "type": "function",
         "function": {
@@ -69,7 +65,6 @@ flight_functions = [
             }
         }
     },
-    # отправка сообщения
     {
         "type": "function",
         "function": {
@@ -86,7 +81,6 @@ flight_functions = [
             }
         }
     },
-    # получение курса валют
     {
         "type": "function",
         "function": {
@@ -102,7 +96,6 @@ flight_functions = [
             }
         }
     },
-    # прогноз погоды
     {
         "type": "function",
         "function": {
@@ -120,10 +113,8 @@ flight_functions = [
     }
 ]
 
-# генерация обширной базы рейсов, имитирующей расписание Аэрофлота
-# создаются рейсы из Москвы во все крупные города и обратно, а также между некоторыми городами
+# Генерация базы данных рейсов с фиктивными данными
 def generate_flights_db():
-    # список городов для маршрутов
     cities = [
         "Moscow", "Saint Petersburg", "Sochi", "Ekaterinburg", "Novosibirsk",
         "Vladivostok", "Kazan", "Krasnodar", "Rostov-on-Don", "Samara",
@@ -134,11 +125,9 @@ def generate_flights_db():
         "New York", "Los Angeles", "Chicago", "Toronto", "Mexico City",
         "Sydney", "Melbourne", "Auckland", "Cape Town", "Nairobi"
     ]
-    # доступные даты
     dates = ["2026-08-15", "2026-08-16", "2026-08-20", "2026-08-25", "2026-09-01", "2026-09-05"]
     db = {}
     flight_id_counter = 1000
-    # рейсы Москва -> город и город -> Москва
     for city in cities:
         if city == "Moscow":
             continue
@@ -168,7 +157,6 @@ def generate_flights_db():
                 }
             }
             flight_id_counter += 1
-    # дополнительные маршруты между другими городами
     extra_routes = [
         ("Saint Petersburg", "Helsinki"),
         ("Sochi", "Istanbul"),
@@ -207,13 +195,10 @@ def generate_flights_db():
             }
             flight_id_counter += 1
     return db
-
-# создание базы рейсов
 flights_db = generate_flights_db()
 
-# реализация функций инструментов
+# Реализация функций-инструментов
 def search_flights(origin: str, destination: str, date: str) -> List[Dict]:
-    # поиск рейсов по маршруту и дате, если не найдено - создаётся фиктивный рейс
     results = []
     for fid, info in flights_db.items():
         if (info["origin"].lower() == origin.lower() and
@@ -244,7 +229,6 @@ def search_flights(origin: str, destination: str, date: str) -> List[Dict]:
     return results
 
 def check_availability(flight_id: str, seat_class: str) -> Dict:
-    # проверка свободных мест в указанном классе
     if flight_id not in flights_db:
         flights_db[flight_id] = {
             "origin": "Unknown",
@@ -256,7 +240,6 @@ def check_availability(flight_id: str, seat_class: str) -> Dict:
     return {"available": seats > 0, "seats_left": seats}
 
 def book_flight(flight_id: str, passenger_name: str, seat_class: str) -> Dict:
-    # бронирование билета с уменьшением количества мест
     if flight_id not in flights_db:
         flights_db[flight_id] = {
             "origin": "Unknown",
@@ -279,13 +262,11 @@ def book_flight(flight_id: str, passenger_name: str, seat_class: str) -> Dict:
     }
 
 def send_message(recipient: str, message: str, channel: str = "email") -> Dict:
-    # заглушка отправки сообщения, вывод в консоль
     print(f"\nОтправка {channel} для {recipient}: {message}\n")
     return {"success": True, "channel": channel, "recipient": recipient, "message": message}
 _exchange_cache = {}
 
 def get_exchange_rate(from_currency: str, to_currency: str) -> Dict:
-    # получение курса через API или мок-данные при недоступности
     from_cur = from_currency.upper()
     to_cur = to_currency.upper()
     cache_key = f"{from_cur}_{to_cur}"
@@ -321,13 +302,12 @@ def get_exchange_rate(from_currency: str, to_currency: str) -> Dict:
         "to": to_cur,
         "rate": rate,
         "timestamp": "сегодня",
-        "source": "мок (интернет недоступен)"
+        "source": "мок интернет недоступен"
     }
     _exchange_cache[cache_key] = result
     return result
 
 def get_weather(city: str, days: int = 1) -> Dict:
-    # генерация случайного прогноза погоды
     return {
         "city": city,
         "forecast": [
@@ -337,10 +317,10 @@ def get_weather(city: str, days: int = 1) -> Dict:
                 "condition": random.choice(["Солнечно", "Облачно", "Дождь", "Снег"])
             } for i in range(min(days, 5))
         ],
-        "source": "мок (локальный прогноз)"
+        "source": "мок локальный прогноз"
     }
 
-# словарь для вызова функций по имени
+# Словарь для вызова функций по имени
 available_functions = {
     "search_flights": search_flights,
     "check_availability": check_availability,
@@ -350,8 +330,7 @@ available_functions = {
     "get_weather": get_weather,
 }
 
-# настройка LLM через LangChain с привязкой инструментов
-# но в данной реализации LLM не используется, только fallback
+# Настройка LLM с привязкой инструментов
 os.environ.setdefault("OPENAI_API_KEY", "dummy")
 llm = ChatOpenAI(
     base_url=os.getenv("LLM_BASE_URL", "http://localhost:1234/v1"),
@@ -363,12 +342,11 @@ llm = ChatOpenAI(
 )
 llm_with_tools = llm.bind_tools(flight_functions, tool_choice="auto")
 
-# вспомогательная функция проверки занятости порта для Phoenix
+# Вспомогательные функции для работы с Phoenix трассировкой
 def _is_port_in_use(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(('localhost', port)) == 0
 
-# инициализация трейсинга Phoenix для отладки
 def init_phoenix():
     try:
         from phoenix.otel import register
@@ -392,203 +370,11 @@ def init_phoenix():
     except (ImportError, Exception) as e:
         print(f"Phoenix не доступен: {e}")
 
-# форматирование результата инструмента в читаемую строку
-def format_tool_result(result):
-    if isinstance(result, list):
-        if not result:
-            return "Рейсы не найдены."
-        lines = ["Найденные рейсы:"]
-        for r in result:
-            seats = r.get('available_seats', {})
-            seats_str = ", ".join(f"{cls}: {cnt}" for cls, cnt in seats.items())
-            lines.append(f"  {r['flight_id']}: {r['origin']} -> {r['destination']}, {r['date']}, места: {seats_str}")
-        return "\n".join(lines)
-    if isinstance(result, dict):
-        if "success" in result:
-            if result["success"]:
-                msg = result.get('message', 'Операция успешна')
-                if 'booking_id' in result:
-                    msg += f" (ID брони: {result['booking_id']})"
-                return f"Успешно: {msg}"
-            else:
-                return f"Ошибка: {result.get('error', 'Неизвестная ошибка')}"
-        if "rate" in result:
-            return f"Курс {result['from']}/{result['to']}: {result['rate']} (источник: {result.get('source', 'неизвестно')})"
-        if "forecast" in result:
-            lines = [f"Прогноз для {result['city']}:"]
-            for f in result['forecast']:
-                lines.append(f"  {f['day']}: {f['temp']}°C, {f['condition']}")
-            return "\n".join(lines)
-        if "available" in result:
-            if result["available"]:
-                return f"Места есть (осталось {result.get('seats_left', '?')})"
-            else:
-                return "Мест нет"
-        return str(result)
-    return str(result)
-
-# fallback-обработчик запросов без использования LLM
-# распознаёт намерения пользователя по ключевым словам и формирует вызовы инструментов
-def fallback_stub(messages: List[Any]) -> AIMessage:
-    user_query = ""
-    tool_results = []
-    for m in messages:
-        if isinstance(m, HumanMessage):
-            user_query += m.content + " "
-        elif isinstance(m, ToolMessage):
-            tool_results.append(m.content)
-    user_query = user_query.strip()
-
-    # если есть результаты инструментов, формируем финальный ответ
-    if tool_results:
-        formatted_parts = []
-        for tr in tool_results:
-            try:
-                data = json.loads(tr)
-                formatted_parts.append(format_tool_result(data))
-            except (json.JSONDecodeError, TypeError):
-                formatted_parts.append(str(tr))
-        return AIMessage(content="\n".join(formatted_parts))
-    query_lower = user_query.lower()
-
-    # распознавание команды отправки сообщения
-    if any(kw in query_lower for kw in ("отправ", "письм", "сообщен", "напиши")):
-        recipient_match = re.search(r'(?:для|получател[юе]?|кому|адресат[у]?)\s+([А-Яа-яA-Za-z\-]+)', user_query)
-        if not recipient_match:
-            recipient_match = re.search(r'(?:сообщен[ие]|письм[оа])\s+([А-Яа-яA-Za-z\-]+)', user_query)
-        if recipient_match:
-            recipient = recipient_match.group(1).strip()
-        else:
-            recipient = "Владимир"
-        msg_match = re.search(r'["\'](.*?)["\']', user_query)
-        if not msg_match:
-            msg_match = re.search(r'(?:сообщен(?:ие|ия?)|текст)\s+([^.,]+?)(?:[,.]|$)', user_query)
-        message = msg_match.group(1).strip() if msg_match else "Привет!"
-        channel = "email"
-        if "телеграм" in query_lower or "telegram" in query_lower:
-            channel = "telegram"
-        elif "смс" in query_lower or "sms" in query_lower:
-            channel = "sms"
-        return AIMessage(
-            content="Отправляю сообщение...",
-            tool_calls=[{
-                "name": "send_message",
-                "args": {"recipient": recipient, "message": message, "channel": channel},
-                "id": "stub_send_1",
-                "type": "tool_call"
-            }]
-        )
-
-    # распознавание команды курса валют
-    if any(kw in query_lower for kw in ("курс", "валют", "доллар", "евро", "рубл", "фунт", "йен", "юань")):
-        currency_map = {"доллар": "USD", "евро": "EUR", "рубль": "RUB", "фунт": "GBP",
-                        "йена": "JPY", "юань": "CNY", "долларов": "USD"}
-        found = re.findall(r'\b(USD|EUR|RUB|GBP|JPY|CNY|доллар|евро|рубль|фунт|йена|юань|долларов)\b', user_query, re.IGNORECASE)
-        codes = []
-        for f in found:
-            f_upper = f.upper()
-            if f_upper in currency_map:
-                codes.append(currency_map[f_upper])
-            elif f_upper in ["USD","EUR","RUB","GBP","JPY","CNY"]:
-                codes.append(f_upper)
-        if len(codes) >= 2:
-            from_cur, to_cur = codes[0], codes[1]
-        else:
-            if "доллар" in query_lower or "USD" in query_lower:
-                from_cur, to_cur = "USD", "EUR"
-            elif "евро" in query_lower or "EUR" in query_lower:
-                from_cur, to_cur = "EUR", "USD"
-            else:
-                from_cur, to_cur = "USD", "RUB"
-        return AIMessage(
-            content=f"Запрашиваю курс {from_cur}/{to_cur}...",
-            tool_calls=[{
-                "name": "get_exchange_rate",
-                "args": {"from_currency": from_cur, "to_currency": to_cur},
-                "id": "stub_rate_1",
-                "type": "tool_call"
-            }]
-        )
-
-    # распознавание команды погоды
-    if any(kw in query_lower for kw in ("погод", "weather", "температур")):
-        city_match = re.search(r'(?:в|для|город[е]?)\s+([А-Яа-яA-Za-z\-]+)', user_query)
-        city = city_match.group(1) if city_match else "Москва"
-        days_match = re.search(r'на\s+(\d+)\s+дн', query_lower)
-        days = int(days_match.group(1)) if days_match else 1
-        return AIMessage(
-            content=f"Получаю погоду для {city} на {days} дн...",
-            tool_calls=[{
-                "name": "get_weather",
-                "args": {"city": city, "days": days},
-                "id": "stub_weather_1",
-                "type": "tool_call"
-            }]
-        )
-
-    # распознавание команды поиска или бронирования рейсов
-    if any(kw in query_lower for kw in ("рейс", "билет", "лететь", "вылет", "прилет", "забронируй", "бронирование")):
-        origin_match = re.search(r'из\s+([А-Яа-яA-Za-z\- ]+)', user_query)
-        if not origin_match:
-            origin_match = re.search(r'откуда\s+([А-Яа-яA-Za-z\- ]+)', user_query)
-        origin = origin_match.group(1).strip() if origin_match else "Москва"
-
-        dest_match = re.search(r'в\s+([А-Яа-яA-Za-z\- ]+)', user_query)
-        if not dest_match:
-            dest_match = re.search(r'куда\s+([А-Яа-яA-Za-z\- ]+)', user_query)
-        if dest_match:
-            destination = dest_match.group(1).strip()
-        else:
-            country_to_city = {
-                "беларусь": "Minsk",
-                "украина": "Kiev",
-                "казахстан": "Astana",
-                "узбекистан": "Tashkent",
-                "германия": "Berlin",
-                "франция": "Paris",
-                "испания": "Madrid",
-                "италия": "Rome",
-                "китай": "Beijing",
-                "япония": "Tokyo",
-                "сша": "New York",
-                "англия": "London",
-                "турция": "Istanbul",
-                "оаэ": "Dubai"
-            }
-            found_country = None
-            for country, city in country_to_city.items():
-                if country in query_lower:
-                    found_country = city
-                    break
-            if found_country:
-                destination = found_country
-            else:
-                destination = "Dubai"
-        date_match = re.search(r'(\d{2})[./](\d{2})[./](\d{4})', user_query)
-        if date_match:
-            date = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}"
-        else:
-            date = "2026-08-15"
-        return AIMessage(
-            content="Ищу рейсы...",
-            tool_calls=[{
-                "name": "search_flights",
-                "args": {"origin": origin, "destination": destination, "date": date},
-                "id": "stub_flight_1",
-                "type": "tool_call"
-            }]
-        )
-
-    # общий ответ, если намерение не распознано
-    return AIMessage(
-        content="Я могу помочь с поиском и бронированием авиабилетов, отправкой сообщений, курсом валют и прогнозом погоды. Что вы хотите сделать?"
-    )
-
-# определение состояния агента для LangGraph
+# Определение состояния агента для LangGraph
 class AgentState(TypedDict):
     messages: List[Any]
 
-# узел агента – всегда использует fallback, чтобы избежать ошибок LLM
+# Узел агента, вызывающий LLM с инструментами
 def agent_node(state: AgentState):
     messages = state["messages"]
     if not any(isinstance(m, SystemMessage) for m in messages):
@@ -597,10 +383,14 @@ def agent_node(state: AgentState):
             "send_message, get_exchange_rate, get_weather. Always respond in Russian."
         ))
         messages = [system_msg] + messages
-    response = fallback_stub(messages)
+    try:
+        response = llm_with_tools.invoke(messages)
+    except Exception as e:
+        error_msg = f"Извините, произошла ошибка при обращении к модели: {e}"
+        response = AIMessage(content=error_msg)
     return {"messages": [response]}
 
-# узел выполнения инструментов – вызывает функции и возвращает результаты
+# Узел выполнения инструментов
 def tools_node(state: AgentState):
     messages = state["messages"]
     last_message = messages[-1]
@@ -610,6 +400,7 @@ def tools_node(state: AgentState):
     for tc in last_message.tool_calls:
         func_name = tc["name"]
         func_args = tc["args"]
+        print(f"Вызов функции: {func_name} с аргументами {func_args}")
         if func_name in available_functions:
             try:
                 result = available_functions[func_name](**func_args)
@@ -624,14 +415,14 @@ def tools_node(state: AgentState):
             results.append(ToolMessage(content=f"Функция {func_name} не найдена", tool_call_id=tc["id"]))
     return {"messages": results}
 
-# условие перехода – если есть tool_calls, идём в узел tools, иначе завершаем
+# Условный переход: если есть вызовы функций, идём в узел tools, иначе завершаем
 def should_continue(state: AgentState):
     last_message = state["messages"][-1]
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         return "tools"
     return END
 
-# построение графа LangGraph
+# Построение графа LangGraph
 workflow = StateGraph(AgentState)
 workflow.add_node("agent", agent_node)
 workflow.add_node("tools", tools_node)
@@ -643,18 +434,18 @@ workflow.add_conditional_edges("agent", should_continue, {
 workflow.add_edge("tools", "agent")
 app = workflow.compile()
 
-# функция запуска агента с одним запросом
+# Функция запуска агента с одним запросом
 def run_agent(query: str) -> str:
     initial_messages = [HumanMessage(content=query)]
     final_state = app.invoke({"messages": initial_messages}, config={"recursion_limit": 10})
     for msg in reversed(final_state["messages"]):
         if isinstance(msg, AIMessage) and not msg.tool_calls:
             return msg.content
-    return "Не удалось получить ответ от агента."
+    return str(final_state["messages"][-1].content) if final_state["messages"] else "Нет ответа"
 
-# интерактивный режим общения
+# Интерактивный режим общения
 def run_interactive_agent():
-    print("\n=== Многофункциональный агент (база Аэрофлота) ===")
+    print("\nМногофункциональный агент база Аэрофлота")
     print("Доступные действия: поиск и бронирование авиабилетов, отправка сообщений, курс валют, погода.")
     print("Введите запрос или exit для выхода\n")
     while True:
@@ -663,8 +454,6 @@ def run_interactive_agent():
             print("До свидания!")
             break
         print("\nОтвет:", run_agent(query))
-
-# точка входа
 if __name__ == "__main__":
     if os.getenv("PHOENIX_ENABLED", "false").lower() == "true":
         init_phoenix()
