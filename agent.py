@@ -17,7 +17,9 @@ except Exception:
     pass
 
 # описание инструментов для LLM в формате JSON Schema
+# эти описания сообщают модели, какие функции доступны и какие параметры ожидаются
 flight_functions = [
+    # поиск рейсов
     {
         "type": "function",
         "function": {
@@ -34,6 +36,7 @@ flight_functions = [
             }
         }
     },
+    # проверка наличия мест
     {
         "type": "function",
         "function": {
@@ -49,6 +52,7 @@ flight_functions = [
             }
         }
     },
+    # бронирование билета
     {
         "type": "function",
         "function": {
@@ -65,6 +69,7 @@ flight_functions = [
             }
         }
     },
+    # отправка сообщения
     {
         "type": "function",
         "function": {
@@ -81,6 +86,7 @@ flight_functions = [
             }
         }
     },
+    # получение курса валют
     {
         "type": "function",
         "function": {
@@ -96,6 +102,7 @@ flight_functions = [
             }
         }
     },
+    # прогноз погоды
     {
         "type": "function",
         "function": {
@@ -112,18 +119,102 @@ flight_functions = [
         }
     }
 ]
-flights_db = {
-    "FL123": {"origin": "Moscow", "destination": "Dubai", "date": "2026-08-10", "available": {"economy": 10, "business": 3, "first": 1}},
-    "FL456": {"origin": "Dubai", "destination": "London", "date": "2026-08-12", "available": {"economy": 5, "business": 0, "first": 2}},
-    "FL789": {"origin": "Moscow", "destination": "Paris", "date": "2026-08-15", "available": {"economy": 20, "business": 4, "first": 0}},
-    "FL101": {"origin": "Moscow", "destination": "Minsk", "date": "2026-08-15", "available": {"economy": 15, "business": 2, "first": 0}},
-    "FL102": {"origin": "Moscow", "destination": "Kiev", "date": "2026-08-16", "available": {"economy": 12, "business": 1, "first": 0}},
-    "FL103": {"origin": "Moscow", "destination": "Astana", "date": "2026-08-17", "available": {"economy": 8, "business": 0, "first": 0}},
-}
 
+# генерация обширной базы рейсов, имитирующей расписание Аэрофлота
+# создаются рейсы из Москвы во все крупные города и обратно, а также между некоторыми городами
+def generate_flights_db():
+    # список городов для маршрутов
+    cities = [
+        "Moscow", "Saint Petersburg", "Sochi", "Ekaterinburg", "Novosibirsk",
+        "Vladivostok", "Kazan", "Krasnodar", "Rostov-on-Don", "Samara",
+        "Minsk", "Kiev", "Astana", "Tashkent", "Baku",
+        "London", "Paris", "Berlin", "Rome", "Madrid", "Barcelona",
+        "Istanbul", "Dubai", "Abu Dhabi", "Doha", "Tehran",
+        "Tokyo", "Beijing", "Shanghai", "Seoul", "Singapore",
+        "New York", "Los Angeles", "Chicago", "Toronto", "Mexico City",
+        "Sydney", "Melbourne", "Auckland", "Cape Town", "Nairobi"
+    ]
+    # доступные даты
+    dates = ["2026-08-15", "2026-08-16", "2026-08-20", "2026-08-25", "2026-09-01", "2026-09-05"]
+    db = {}
+    flight_id_counter = 1000
+    # рейсы Москва -> город и город -> Москва
+    for city in cities:
+        if city == "Moscow":
+            continue
+        for date in dates:
+            fid = f"SU{flight_id_counter}"
+            db[fid] = {
+                "origin": "Moscow",
+                "destination": city,
+                "date": date,
+                "available": {
+                    "economy": random.randint(10, 30),
+                    "business": random.randint(0, 8),
+                    "first": random.randint(0, 3)
+                }
+            }
+            flight_id_counter += 1
+        for date in dates:
+            fid = f"SU{flight_id_counter}"
+            db[fid] = {
+                "origin": city,
+                "destination": "Moscow",
+                "date": date,
+                "available": {
+                    "economy": random.randint(10, 30),
+                    "business": random.randint(0, 8),
+                    "first": random.randint(0, 3)
+                }
+            }
+            flight_id_counter += 1
+    # дополнительные маршруты между другими городами
+    extra_routes = [
+        ("Saint Petersburg", "Helsinki"),
+        ("Sochi", "Istanbul"),
+        ("Ekaterinburg", "Dubai"),
+        ("Novosibirsk", "Beijing"),
+        ("Vladivostok", "Seoul"),
+        ("Kiev", "Warsaw"),
+        ("Minsk", "Vilnius"),
+        ("Astana", "Dubai"),
+        ("Tashkent", "Istanbul")
+    ]
+    for origin, dest in extra_routes:
+        for date in dates:
+            fid = f"SU{flight_id_counter}"
+            db[fid] = {
+                "origin": origin,
+                "destination": dest,
+                "date": date,
+                "available": {
+                    "economy": random.randint(8, 25),
+                    "business": random.randint(0, 6),
+                    "first": random.randint(0, 2)
+                }
+            }
+            flight_id_counter += 1
+            fid = f"SU{flight_id_counter}"
+            db[fid] = {
+                "origin": dest,
+                "destination": origin,
+                "date": date,
+                "available": {
+                    "economy": random.randint(8, 25),
+                    "business": random.randint(0, 6),
+                    "first": random.randint(0, 2)
+                }
+            }
+            flight_id_counter += 1
+    return db
+
+# создание базы рейсов
+flights_db = generate_flights_db()
+
+# реализация функций инструментов
 def search_flights(origin: str, destination: str, date: str) -> List[Dict]:
+    # поиск рейсов по маршруту и дате, если не найдено - создаётся фиктивный рейс
     results = []
-    # ищем существующие рейсы
     for fid, info in flights_db.items():
         if (info["origin"].lower() == origin.lower() and
                 info["destination"].lower() == destination.lower() and
@@ -135,11 +226,8 @@ def search_flights(origin: str, destination: str, date: str) -> List[Dict]:
                 "date": info["date"],
                 "available_seats": info["available"]
             })
-    # если ничего не найдено, создаём фиктивный рейс
     if not results:
-        # генерируем новый ID
-        new_id = f"FL{random.randint(200, 999)}"
-        # создаём запись в базе
+        new_id = f"SU{random.randint(2000, 9999)}"
         flights_db[new_id] = {
             "origin": origin,
             "destination": destination,
@@ -156,8 +244,8 @@ def search_flights(origin: str, destination: str, date: str) -> List[Dict]:
     return results
 
 def check_availability(flight_id: str, seat_class: str) -> Dict:
+    # проверка свободных мест в указанном классе
     if flight_id not in flights_db:
-        # если рейс не найден, создаём его на лету (для совместимости)
         flights_db[flight_id] = {
             "origin": "Unknown",
             "destination": "Unknown",
@@ -168,8 +256,8 @@ def check_availability(flight_id: str, seat_class: str) -> Dict:
     return {"available": seats > 0, "seats_left": seats}
 
 def book_flight(flight_id: str, passenger_name: str, seat_class: str) -> Dict:
+    # бронирование билета с уменьшением количества мест
     if flight_id not in flights_db:
-        # если рейс не найден, создаём его
         flights_db[flight_id] = {
             "origin": "Unknown",
             "destination": "Unknown",
@@ -191,11 +279,13 @@ def book_flight(flight_id: str, passenger_name: str, seat_class: str) -> Dict:
     }
 
 def send_message(recipient: str, message: str, channel: str = "email") -> Dict:
+    # заглушка отправки сообщения, вывод в консоль
     print(f"\nОтправка {channel} для {recipient}: {message}\n")
     return {"success": True, "channel": channel, "recipient": recipient, "message": message}
 _exchange_cache = {}
 
 def get_exchange_rate(from_currency: str, to_currency: str) -> Dict:
+    # получение курса через API или мок-данные при недоступности
     from_cur = from_currency.upper()
     to_cur = to_currency.upper()
     cache_key = f"{from_cur}_{to_cur}"
@@ -237,6 +327,7 @@ def get_exchange_rate(from_currency: str, to_currency: str) -> Dict:
     return result
 
 def get_weather(city: str, days: int = 1) -> Dict:
+    # генерация случайного прогноза погоды
     return {
         "city": city,
         "forecast": [
@@ -249,6 +340,7 @@ def get_weather(city: str, days: int = 1) -> Dict:
         "source": "мок (локальный прогноз)"
     }
 
+# словарь для вызова функций по имени
 available_functions = {
     "search_flights": search_flights,
     "check_availability": check_availability,
@@ -258,7 +350,8 @@ available_functions = {
     "get_weather": get_weather,
 }
 
-# настройка LLM (не используется, но оставлена для совместимости)
+# настройка LLM через LangChain с привязкой инструментов
+# но в данной реализации LLM не используется, только fallback
 os.environ.setdefault("OPENAI_API_KEY", "dummy")
 llm = ChatOpenAI(
     base_url=os.getenv("LLM_BASE_URL", "http://localhost:1234/v1"),
@@ -270,12 +363,12 @@ llm = ChatOpenAI(
 )
 llm_with_tools = llm.bind_tools(flight_functions, tool_choice="auto")
 
-# функция для проверки занятости порта
+# вспомогательная функция проверки занятости порта для Phoenix
 def _is_port_in_use(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(('localhost', port)) == 0
 
-# инициализация трейсинга Phoenix
+# инициализация трейсинга Phoenix для отладки
 def init_phoenix():
     try:
         from phoenix.otel import register
@@ -319,16 +412,13 @@ def format_tool_result(result):
                 return f"Успешно: {msg}"
             else:
                 return f"Ошибка: {result.get('error', 'Неизвестная ошибка')}"
-
         if "rate" in result:
             return f"Курс {result['from']}/{result['to']}: {result['rate']} (источник: {result.get('source', 'неизвестно')})"
-
         if "forecast" in result:
             lines = [f"Прогноз для {result['city']}:"]
             for f in result['forecast']:
                 lines.append(f"  {f['day']}: {f['temp']}°C, {f['condition']}")
             return "\n".join(lines)
-
         if "available" in result:
             if result["available"]:
                 return f"Места есть (осталось {result.get('seats_left', '?')})"
@@ -338,6 +428,7 @@ def format_tool_result(result):
     return str(result)
 
 # fallback-обработчик запросов без использования LLM
+# распознаёт намерения пользователя по ключевым словам и формирует вызовы инструментов
 def fallback_stub(messages: List[Any]) -> AIMessage:
     user_query = ""
     tool_results = []
@@ -360,7 +451,7 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
         return AIMessage(content="\n".join(formatted_parts))
     query_lower = user_query.lower()
 
-    # распознавание отправки сообщения
+    # распознавание команды отправки сообщения
     if any(kw in query_lower for kw in ("отправ", "письм", "сообщен", "напиши")):
         recipient_match = re.search(r'(?:для|получател[юе]?|кому|адресат[у]?)\s+([А-Яа-яA-Za-z\-]+)', user_query)
         if not recipient_match:
@@ -388,7 +479,7 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
             }]
         )
 
-    # распознавание курса валют
+    # распознавание команды курса валют
     if any(kw in query_lower for kw in ("курс", "валют", "доллар", "евро", "рубл", "фунт", "йен", "юань")):
         currency_map = {"доллар": "USD", "евро": "EUR", "рубль": "RUB", "фунт": "GBP",
                         "йена": "JPY", "юань": "CNY", "долларов": "USD"}
@@ -419,7 +510,7 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
             }]
         )
 
-    # распознавание погоды
+    # распознавание команды погоды
     if any(kw in query_lower for kw in ("погод", "weather", "температур")):
         city_match = re.search(r'(?:в|для|город[е]?)\s+([А-Яа-яA-Za-z\-]+)', user_query)
         city = city_match.group(1) if city_match else "Москва"
@@ -435,35 +526,34 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
             }]
         )
 
-    # распознавание поиска или бронирования рейсов
+    # распознавание команды поиска или бронирования рейсов
     if any(kw in query_lower for kw in ("рейс", "билет", "лететь", "вылет", "прилет", "забронируй", "бронирование")):
-        # извлекаем город вылета
         origin_match = re.search(r'из\s+([А-Яа-яA-Za-z\- ]+)', user_query)
         if not origin_match:
             origin_match = re.search(r'откуда\s+([А-Яа-яA-Za-z\- ]+)', user_query)
         origin = origin_match.group(1).strip() if origin_match else "Москва"
 
-        # извлекаем город прилёта
         dest_match = re.search(r'в\s+([А-Яа-яA-Za-z\- ]+)', user_query)
         if not dest_match:
             dest_match = re.search(r'куда\s+([А-Яа-яA-Za-z\- ]+)', user_query)
         if dest_match:
             destination = dest_match.group(1).strip()
         else:
-            # если не нашли город, пробуем найти страну -> столица
             country_to_city = {
-                "беларусь": "Минск",
-                "украина": "Киев",
-                "казахстан": "Астана",
-                "узбекистан": "Ташкент",
-                "германия": "Берлин",
-                "франция": "Париж",
-                "испания": "Мадрид",
-                "италия": "Рим",
-                "китай": "Пекин",
-                "япония": "Токио",
-                "сша": "Нью-Йорк",
-                "англия": "Лондон"
+                "беларусь": "Minsk",
+                "украина": "Kiev",
+                "казахстан": "Astana",
+                "узбекистан": "Tashkent",
+                "германия": "Berlin",
+                "франция": "Paris",
+                "испания": "Madrid",
+                "италия": "Rome",
+                "китай": "Beijing",
+                "япония": "Tokyo",
+                "сша": "New York",
+                "англия": "London",
+                "турция": "Istanbul",
+                "оаэ": "Dubai"
             }
             found_country = None
             for country, city in country_to_city.items():
@@ -473,9 +563,7 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
             if found_country:
                 destination = found_country
             else:
-                destination = "Дубай"  # fallback
-
-        # извлекаем дату
+                destination = "Dubai"
         date_match = re.search(r'(\d{2})[./](\d{2})[./](\d{4})', user_query)
         if date_match:
             date = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}"
@@ -496,25 +584,23 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
         content="Я могу помочь с поиском и бронированием авиабилетов, отправкой сообщений, курсом валют и прогнозом погоды. Что вы хотите сделать?"
     )
 
-# определение состояния агента
+# определение состояния агента для LangGraph
 class AgentState(TypedDict):
     messages: List[Any]
 
-# узел агента – теперь всегда используем fallback, чтобы избежать ошибок
+# узел агента – всегда использует fallback, чтобы избежать ошибок LLM
 def agent_node(state: AgentState):
     messages = state["messages"]
-    # добавляем системный промпт, если его нет (для совместимости)
     if not any(isinstance(m, SystemMessage) for m in messages):
         system_msg = SystemMessage(content=(
             "You are a helpful assistant with tools: search_flights, check_availability, book_flight, "
             "send_message, get_exchange_rate, get_weather. Always respond in Russian."
         ))
         messages = [system_msg] + messages
-    # используем только fallback, LLM не вызываем
     response = fallback_stub(messages)
     return {"messages": [response]}
 
-# узел выполнения инструментов
+# узел выполнения инструментов – вызывает функции и возвращает результаты
 def tools_node(state: AgentState):
     messages = state["messages"]
     last_message = messages[-1]
@@ -538,14 +624,14 @@ def tools_node(state: AgentState):
             results.append(ToolMessage(content=f"Функция {func_name} не найдена", tool_call_id=tc["id"]))
     return {"messages": results}
 
-# условие перехода между узлами
+# условие перехода – если есть tool_calls, идём в узел tools, иначе завершаем
 def should_continue(state: AgentState):
     last_message = state["messages"][-1]
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         return "tools"
     return END
 
-# построение графа на LangGraph
+# построение графа LangGraph
 workflow = StateGraph(AgentState)
 workflow.add_node("agent", agent_node)
 workflow.add_node("tools", tools_node)
@@ -566,10 +652,10 @@ def run_agent(query: str) -> str:
             return msg.content
     return "Не удалось получить ответ от агента."
 
-# интерактивный режим
+# интерактивный режим общения
 def run_interactive_agent():
-    print("\n=== Многофункциональный агент ===")
-    print("Доступные действия: бронирование авиабилетов, отправка сообщений, курс валют, погода.")
+    print("\n=== Многофункциональный агент (база Аэрофлота) ===")
+    print("Доступные действия: поиск и бронирование авиабилетов, отправка сообщений, курс валют, погода.")
     print("Введите запрос или exit для выхода\n")
     while True:
         query = input("> ").strip()
