@@ -315,15 +315,17 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
             tool_results.append(m.content)
     user_query = user_query.strip()
 
-    # если есть результаты инструментов, формируем финальный ответ
+    # если есть результаты инструментов, формируем финальный ответ вместо вызова tool_calls
     if tool_results:
-        last_content = tool_results[-1]
-        try:
-            data = json.loads(last_content)
-            formatted = format_tool_result(data)
-        except (json.JSONDecodeError, TypeError):
-            formatted = str(last_content)
-        return AIMessage(content=formatted)
+        formatted_parts = []
+        for tr in tool_results:
+            try:
+                data = json.loads(tr)
+                formatted_parts.append(format_tool_result(data))
+            except (json.JSONDecodeError, TypeError):
+                formatted_parts.append(str(tr))
+        return AIMessage(content="\n".join(formatted_parts))
+
     query_lower = user_query.lower()
 
     # распознавание отправки сообщения
