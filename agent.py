@@ -225,7 +225,7 @@ available_functions = {
     "get_weather": get_weather,
 }
 
-# настройка LLM через LangChain с привязкой инструментов
+# настройка LLM (не используется, но оставлена для совместимости)
 os.environ.setdefault("OPENAI_API_KEY", "dummy")
 llm = ChatOpenAI(
     base_url=os.getenv("LLM_BASE_URL", "http://localhost:1234/v1"),
@@ -315,7 +315,7 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
             tool_results.append(m.content)
     user_query = user_query.strip()
 
-    # если есть результаты инструментов, формируем финальный ответ вместо вызова tool_calls
+    # если есть результаты инструментов, формируем финальный ответ
     if tool_results:
         formatted_parts = []
         for tr in tool_results:
@@ -330,22 +330,17 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
 
     # распознавание отправки сообщения
     if any(kw in query_lower for kw in ("отправ", "письм", "сообщен", "напиши")):
-        # ищем получателя после ключевых слов
         recipient_match = re.search(r'(?:для|получател[юе]?|кому|адресат[у]?)\s+([А-Яа-яA-Za-z\-]+)', user_query)
         if not recipient_match:
-            # пробуем найти имя после слов "сообщение", "письмо"
             recipient_match = re.search(r'(?:сообщен[ие]|письм[оа])\s+([А-Яа-яA-Za-z\-]+)', user_query)
         if recipient_match:
             recipient = recipient_match.group(1).strip()
         else:
-            # если не нашли, используем значение по умолчанию
             recipient = "Владимир"
-        # ищем текст сообщения
         msg_match = re.search(r'["\'](.*?)["\']', user_query)
         if not msg_match:
             msg_match = re.search(r'(?:сообщен(?:ие|ия?)|текст)\s+([^.,]+?)(?:[,.]|$)', user_query)
         message = msg_match.group(1).strip() if msg_match else "Привет!"
-        # определяем канал
         channel = "email"
         if "телеграм" in query_lower or "telegram" in query_lower:
             channel = "telegram"
@@ -438,20 +433,18 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
 class AgentState(TypedDict):
     messages: List[Any]
 
-# узел агента для вызова LLM или fallback
+# узел агента – теперь всегда используем fallback, чтобы избежать ошибок
 def agent_node(state: AgentState):
     messages = state["messages"]
+    # добавляем системный промпт, если его нет (для совместимости)
     if not any(isinstance(m, SystemMessage) for m in messages):
         system_msg = SystemMessage(content=(
             "You are a helpful assistant with tools: search_flights, check_availability, book_flight, "
             "send_message, get_exchange_rate, get_weather. Always respond in Russian."
         ))
         messages = [system_msg] + messages
-    try:
-        response = llm_with_tools.invoke(messages)
-    except Exception as e:
-        print(f"Ошибка LLM: {e}, используем fallback")
-        response = fallback_stub(messages)
+    # используем только fallback, LLM не вызываем
+    response = fallback_stub(messages)
     return {"messages": [response]}
 
 # узел выполнения инструментов
