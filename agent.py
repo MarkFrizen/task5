@@ -11,7 +11,6 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 from langgraph.graph import StateGraph, END
-
 try:
     load_dotenv()
 except Exception:
@@ -162,7 +161,6 @@ def book_flight(flight_id: str, passenger_name: str, seat_class: str) -> Dict:
 def send_message(recipient: str, message: str, channel: str = "email") -> Dict:
     print(f"\nОтправка {channel} для {recipient}: {message}\n")
     return {"success": True, "channel": channel, "recipient": recipient, "message": message}
-
 _exchange_cache = {}
 
 def get_exchange_rate(from_currency: str, to_currency: str) -> Dict:
@@ -218,7 +216,6 @@ def get_weather(city: str, days: int = 1) -> Dict:
         ],
         "source": "мок (локальный прогноз)"
     }
-
 available_functions = {
     "search_flights": search_flights,
     "check_availability": check_availability,
@@ -280,7 +277,6 @@ def format_tool_result(result):
             seats_str = ", ".join(f"{cls}: {cnt}" for cls, cnt in seats.items())
             lines.append(f"  {r['flight_id']}: {r['origin']} -> {r['destination']}, {r['date']}, места: {seats_str}")
         return "\n".join(lines)
-
     if isinstance(result, dict):
         if "success" in result:
             if result["success"]:
@@ -305,9 +301,7 @@ def format_tool_result(result):
                 return f"Места есть (осталось {result.get('seats_left', '?')})"
             else:
                 return "Мест нет"
-
         return str(result)
-
     return str(result)
 
 # fallback-обработчик запросов без использования LLM
@@ -330,7 +324,6 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
         except (json.JSONDecodeError, TypeError):
             formatted = str(last_content)
         return AIMessage(content=formatted)
-
     query_lower = user_query.lower()
 
     # распознавание отправки сообщения
