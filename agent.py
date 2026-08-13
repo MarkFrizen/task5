@@ -16,6 +16,10 @@ try:
 except Exception:
     pass
 
+# Конфигурация онлайн-режима
+USE_ONLINE_MODE = True
+OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "")
+
 # Описание инструментов в формате JSON Schema для передачи в LLM
 flight_functions = [
     {
@@ -302,7 +306,54 @@ def get_exchange_rate(from_currency: str, to_currency: str) -> Dict:
     }
     _exchange_cache[cache_key] = result
     return result
+
+# Реальная погода через OpenWeatherMap
+def get_weather_real(city: str, days: int = 1) -> Dict:
+    if not OPENWEATHER_API_KEY:
+        return None
+    try:
+        url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={OPENWEATHER_API_KEY}&units=metric&lang=ru"
+        resp = requests.get(url, timeout=5)
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        forecast_list = []
+        if days > 1:
+            url_forecast = f"https://api.openweathermap.org/data/2.5/forecast?q={city}&appid={OPENWEATHER_API_KEY}&units=metric&lang=ru&cnt={days*8}"
+            resp_f = requests.get(url_forecast, timeout=5)
+            if resp_f.status_code == 200:
+                fdata = resp_f.json()
+                for item in fdata.get('list', [])[:days]:
+                    dt = item.get('dt_txt', '')
+                    temp = item['main']['temp']
+                    cond = item['weather'][0]['description'] if item.get('weather') else ''
+                    forecast_list.append({
+                        "day": dt[:10] if dt else f"День {len(forecast_list)+1}",
+                        "temp": round(temp),
+                        "condition": cond.capitalize()
+                    })
+        if not forecast_list:
+            temp = data['main']['temp']
+            cond = data['weather'][0]['description'] if data.get('weather') else ''
+            forecast_list.append({
+                "day": "Сегодня",
+                "temp": round(temp),
+                "condition": cond.capitalize()
+            })
+        return {
+            "city": city,
+            "forecast": forecast_list,
+            "source": "OpenWeatherMap онлайн"
+        }
+    except Exception:
+        return None
+
 def get_weather(city: str, days: int = 1) -> Dict:
+    if USE_ONLINE_MODE:
+        real = get_weather_real(city, days)
+        if real:
+            return real
+        print(f"Онлайн-погода не доступна, использую мок для {city}")
     return {
         "city": city,
         "forecast": [
@@ -391,7 +442,7 @@ def format_tool_result(result):
         if "rate" in result:
             return f"Курс {result['from']}/{result['to']}: {result['rate']} (источник: {result.get('source', 'неизвестно')})"
         if "forecast" in result:
-            lines = [f"Прогноз для {result['city']}:"]
+            lines = [f"Прогноз для {result['city']} (источник: {result.get('source', 'неизвестно')}):"]
             for f in result['forecast']:
                 lines.append(f"  {f['day']}: {f['temp']}°C, {f['condition']}")
             return "\n".join(lines)
@@ -405,7 +456,6 @@ def format_tool_result(result):
 
 # Fallback-обработчик, если LLM недоступна или не поддерживает инструменты
 def fallback_handler(messages: List[Any]) -> AIMessage:
-    # Сначала проверяем, есть ли в истории результаты выполнения инструментов
     tool_results = []
     for m in messages:
         if isinstance(m, ToolMessage):
@@ -415,19 +465,16 @@ def fallback_handler(messages: List[Any]) -> AIMessage:
             except:
                 tool_results.append(m.content)
     if tool_results:
-        # Формируем ответ на основе результатов инструментов
         formatted_parts = []
         for tr in tool_results:
             formatted_parts.append(format_tool_result(tr))
         return AIMessage(content="\n".join(formatted_parts))
-    # Если результатов нет, анализируем исходный запрос пользователя
     user_query = ""
     for m in messages:
         if isinstance(m, HumanMessage):
             user_query += m.content + " "
     user_query = user_query.strip()
     query_lower = user_query.lower()
-    # Распознавание команды отправки сообщения
     if any(kw in query_lower for kw in ("отправ", "письм", "сообщен", "напиши")):
         recipient_match = re.search(r'(?:для|получател[юе]?|кому|адресат[у]?)\s+([А-Яа-яA-Za-z\-]+)', user_query)
         if not recipient_match:
@@ -451,7 +498,6 @@ def fallback_handler(messages: List[Any]) -> AIMessage:
                 "type": "tool_call"
             }]
         )
-    # Распознавание курса валют
     if any(kw in query_lower for kw in ("курс", "валют", "доллар", "евро", "рубл", "фунт")):
         currency_map = {"доллар": "USD", "евро": "EUR", "рубль": "RUB", "фунт": "GBP"}
         found = re.findall(r'\b(USD|EUR|RUB|GBP|доллар|евро|рубль|фунт)\b', user_query, re.IGNORECASE)
@@ -480,7 +526,6 @@ def fallback_handler(messages: List[Any]) -> AIMessage:
                 "type": "tool_call"
             }]
         )
-    # Распознавание погоды
     if any(kw in query_lower for kw in ("погод", "weather", "температур")):
         city_match = re.search(r'(?:в|для|город[е]?)\s+([А-Яа-яA-Za-z\-]+)', user_query)
         city = city_match.group(1) if city_match else "Москва"
@@ -495,7 +540,6 @@ def fallback_handler(messages: List[Any]) -> AIMessage:
                 "type": "tool_call"
             }]
         )
-    # Распознавание поиска рейсов
     if any(kw in query_lower for kw in ("рейс", "билет", "лететь", "вылет", "прилет", "забронируй", "бронирование")):
         origin_match = re.search(r'из\s+([А-Яа-яA-Za-z\- ]+)', user_query)
         if not origin_match:
@@ -508,15 +552,15 @@ def fallback_handler(messages: List[Any]) -> AIMessage:
             destination = dest_match.group(1).strip()
         else:
             country_to_city = {
-                "беларусь": "Minsk", "украина": "Kiev", "казахстан": "Astana",
-                "узбекистан": "Tashkent", "германия": "Berlin", "франция": "Paris",
-                "испания": "Madrid", "италия": "Rome", "китай": "Beijing",
-                "япония": "Tokyo", "сша": "New York", "англия": "London",
-                "турция": "Istanbul", "оаэ": "Dubai"
+                "Беларусь": "Minsk", "Украина": "Kiev", "Казахстан": "Astana",
+                "Узбекистан": "Tashkent", "Германия": "Berlin", "Франция": "Paris",
+                "Испания": "Madrid", "Италия": "Rome", "Китай": "Beijing",
+                "Япония": "Tokyo", "США": "New York", "Англия": "London",
+                "Турция": "Istanbul", "ОАЭ": "Dubai"
             }
             found_country = None
             for country, city in country_to_city.items():
-                if country in query_lower:
+                if country.lower() in query_lower:
                     found_country = city
                     break
             destination = found_country if found_country else "Dubai"
@@ -534,7 +578,6 @@ def fallback_handler(messages: List[Any]) -> AIMessage:
                 "type": "tool_call"
             }]
         )
-    # Общий ответ
     return AIMessage(
         content="Я могу помочь с поиском и бронированием авиабилетов, отправкой сообщений, курсом валют и прогнозом погоды. Что вы хотите сделать?"
     )
@@ -542,14 +585,12 @@ def fallback_handler(messages: List[Any]) -> AIMessage:
 # Узел агента, вызывающий LLM с инструментами, с fallback при ошибке
 def agent_node(state: AgentState):
     messages = state["messages"]
-    # Добавляем системное сообщение, если его ещё нет
     if not any(isinstance(m, SystemMessage) for m in messages):
         system_msg = SystemMessage(content=(
             "You are a helpful assistant with tools: search_flights, check_availability, book_flight, "
             "send_message, get_exchange_rate, get_weather. Always respond in Russian."
         ))
         messages = [system_msg] + messages
-    # Если последнее сообщение - ToolMessage, добавляем фиктивное сообщение пользователя
     if messages and isinstance(messages[-1], ToolMessage):
         messages.append(HumanMessage(content="Продолжи"))
     try:
@@ -614,7 +655,7 @@ def run_agent(query: str) -> str:
 
 # Интерактивный режим общения
 def run_interactive_agent():
-    print("\nМногофункциональный агент")
+    print("\nМногофункциональный агент" + (" (онлайн-режим включён)" if USE_ONLINE_MODE else ""))
     print("Доступные действия: поиск и бронирование авиабилетов, отправка сообщений, курс валют, погода.")
     print("Введите запрос или exit для выхода\n")
     while True:
