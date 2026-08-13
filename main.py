@@ -1,3 +1,4 @@
+# REST API для многофункционального агента на FastAPI
 import asyncio
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -9,7 +10,6 @@ app = FastAPI(
 )
 class Request(BaseModel):
     query: str
-
 @app.post("/execute")
 async def execute(request: Request):
     try:
@@ -17,7 +17,6 @@ async def execute(request: Request):
         return {"response": answer}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/health")
 async def health():
     return {"status": "ok", "model": os.getenv("LLM_MODEL", "локальная")}

@@ -11,11 +11,11 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 try:
-    load_dotenv()  # Загружает переменные из .env, если файл существует
+    load_dotenv()
 except Exception:
-    pass  # Работает без .env файла
+    pass
 
-# 1. Описание функций в формате JSON Schema
+# 1. Описание инструментов агента
 # Эти описания передаются в LLM, чтобы она знала,
 # какие функции можно вызывать и с какими параметрами.
 # Список инструментов, доступных агенту.
@@ -127,8 +127,8 @@ flight_functions = [
     }
 ]
 
-# 2. Реализация функций-инструментов
-# Эти функции вызываются агентом при необходимости.
+# 2. Реализация инструментов — заглушки и API
+# Вызываются агентом для выполнения задач
 # База данных рейсов
 flights_db = {
     "FL123": {"origin": "Moscow", "destination": "Dubai", "date": "2026-08-10", "available": {"economy": 10, "business": 3, "first": 1}},
@@ -254,7 +254,7 @@ def get_weather(city: str, days: int = 1) -> Dict:
         "source": "мок (локальный прогноз)"
     }
 
-# Словарь для вызова функций по имени (используется в узле tools_node)
+# Словарь для вызова функций по имени
 available_functions = {
     "search_flights": search_flights,
     "check_availability": check_availability,
@@ -264,30 +264,28 @@ available_functions = {
     "get_weather": get_weather,
 }
 
-# 3. Настройка LLM
-# Используем LangChain для единообразного вызова.
-os.environ.setdefault("OPENAI_API_KEY", "dummy")  # для локального сервера ключ не нужен
+# 3. Настройка LLM через LangChain
+os.environ.setdefault("OPENAI_API_KEY", "dummy")
 llm = ChatOpenAI(
-    base_url=os.getenv("LLM_BASE_URL", "http://localhost:1234/v1"),  # адрес локального сервера
-    api_key="dummy",                                                # фиктивный ключ
-    model=os.getenv("LLM_MODEL", "qwen/qwen3.5-9b"),               # модель, загруженная в LM Studio
-    temperature=float(os.getenv("LLM_TEMPERATURE", "0.0")),        # температура генерации
-    timeout=10,                                                      # таймаут HTTP-запроса (сек)
-    max_retries=0,                                                    # не повторять при ошибках
+    base_url=os.getenv("LLM_BASE_URL", "http://localhost:1234/v1"),
+    api_key="dummy",
+    model=os.getenv("LLM_MODEL", "qwen/qwen3.5-9b"),
+    temperature=float(os.getenv("LLM_TEMPERATURE", "0.0")),
+    timeout=10,
+    max_retries=0,
 )
 
 # Привязываем описанные инструменты к LLM
 llm_with_tools = llm.bind_tools(flight_functions, tool_choice="auto")
 
-# 4. Трейсинг Phoenix
-# Используется для мониторинга и отладки работы агента.
+# 4. Трейсинг Phoenix для мониторинга и отладки
 def _is_port_in_use(port: int) -> bool:
-    """Проверяет, занят ли порт (для запуска Phoenix)."""
+    """Проверяет, занят ли порт."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(('localhost', port)) == 0
 
 def init_phoenix():
-    """Запускает Phoenix сервер и подключает инструментарий LangChain."""
+    """Запускает Phoenix сервер и подключает инструментарий LangChain"""
     try:
         from phoenix.otel import register
         from openinference.instrumentation.langchain import LangChainInstrumentor
@@ -299,22 +297,20 @@ def init_phoenix():
             for _ in range(30):
                 if _is_port_in_use(6006):
                     break
-                threading.Event().wait(0.5)
+                threading.Event().wait(0.5)  # ожидание 0.5 секунды
         if _is_port_in_use(6006):
             tracer_provider = register(
                 project_name="flight-booking-agent",
                 endpoint="http://localhost:6006/v1/traces",
             )
             LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
-            print("✅ Трейсинг Phoenix подключён, доступен по адресу http://localhost:6006")
+            print("Трейсинг Phoenix подключён, доступен по адресу http://localhost:6006")
         else:
             print("Phoenix не запустился, трейсинг отключён.")
     except (ImportError, Exception) as e:
         print(f"Phoenix не доступен: {e}")
 
-# 5. Заглушка для работы без LLM
-# Если LLM недоступна, этот парсер анализирует запрос
-# и вызывает подходящую функцию напрямую.
+# 5. Fallback — парсер запросов при недоступности LLM
 def fallback_stub(messages: List[Any]) -> AIMessage:
     """
     Генерирует ответ с вызовом инструментов на основе текста запроса,
@@ -331,7 +327,7 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
         if tool_results:
             last_result = tool_results[-1].content
             return AIMessage(content=f"Готово. Результат: {last_result}")
-        return AIMessage(content="Запрос выполнен.")
+        return AIMessage(content="Запрос выполнен")
 
     # --- Обработка отправки сообщения ---
     if "отправ" in query_lower and ("сообщен" in query_lower or "письм" in query_lower):
@@ -407,9 +403,8 @@ def fallback_stub(messages: List[Any]) -> AIMessage:
         content="Я могу помочь с поиском и бронированием авиабилетов, отправкой сообщений, курсом валют и прогнозом погоды. Что вы хотите сделать?"
     )
 
-# 6. LangGraph: определение состояния, узлов и графа
-#    Здесь строится агентский цикл:
-#    агент -> решение вызвать функцию -> выполнение -> возврат результата -> агент
+# 6. LangGraph — построение графа агента
+# Цикл: агент решает вызвать функцию -> выполнение -> возврат результата
 class AgentState(TypedDict):
     """Состояние агента – просто список сообщений."""
     messages: List[Any]
@@ -479,7 +474,7 @@ workflow.add_edge("tools", "agent")         # после инструменто�
 # Компилируем граф в исполняемое приложение
 app = workflow.compile()
 
-# 7. Основные функции для запуска агента
+# 7. Запуск агента — CLI и API
 def run_agent(query: str) -> str:
     """
     Запускает агента с заданным запросом и возвращает финальный ответ.
